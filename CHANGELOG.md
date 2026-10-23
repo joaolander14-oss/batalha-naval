@@ -1,5 +1,21 @@
 # Changelog
 
+## v2.0.0 — morteiros, aletas, sensores, avarias, apoio e contramedidas
+**11 morteiros novos** (todos giram, miram no cursor e passam por cima de tudo)
+- **Leve**, **Duplo** (2 granadas), **de Rajada** (4 granadas espalhadas), **de Fogo Rápido**, **de Longo Alcance** (1400), **de Cerco** (dano enorme em ponto), **Incendiário** (napalm), **de Fragmentação** (5 submunições), **Eletromagnético** (zera escudo, atordoa 7 s), **de Fumaça** (nuvem de 125 de raio por 17 s) e **Lança-minas** (a granada vira uma mina invisível). A IA não usa fumaça nem minas.
+**14 aletas novas** (família de laterais com versão esquerda/direita automática, traseiras e de proa)
+- Laterais: **Larga** (vale por 2), **Blindada**, **Hidrofólio** (+4% de velocidade), **Quilha Estabilizadora** (anti-derrapagem), **Furtiva** (conta na cobertura furtiva), **Hidroplano de Mergulho** (submarinos) e **a Jato**.
+- Traseiras: **Leme Duplo**, **Leme Blindado**, **Leme Vetorial** e **Skeg de Popa**.
+- **Aletas de proa** (novidade): **Proa Hidrodinâmica** (+5% de velocidade), **Domo de Sonar de Proa** (sonar passivo embutido) e **Defletor de Proa** (blindagem frontal). O estaleiro escolhe sozinho o lado certo e o espelho continua funcionando.
+**Sensores** — Radar de Longo Alcance (+520), Mastro de Vigia (+140, até 3), Sonar Rebocado (1250), Sonar Ativo Compacto, **Sensor Infravermelho** (vê o calor dos motores e atravessa metade da furtividade), **Radar Antifurtivo** (nenhum navio fica abaixo de 45% de visibilidade), **Detector de Ameaças** (marca mísseis, torpedos e granadas inimigos mesmo na névoa), **Detector de Minas**, **Telêmetro Laser** (+10% de alcance e −25% de dispersão) e **Gerador Furtivo Compacto**.
+**Controle de avarias** — Bomba Compacta e de Alta Vazão (valem as 3 melhores), Reparo Pesado, **Central de Reparos** (raio de 9 células), Extintor de Alta Capacidade, **Selante de Rombos**, **Câmara de Flutuação**, **Supressor de Explosão** (munição explode bem menos), **Cortador de Cabos** (contra o gancho), **Isolante de Choque** (atordoamento pela metade) e **Dissipador de Choque** (−12% de dano de explosão).
+**Apoio** — Escudo Rápido e Escudo Pesado, Compressor de Motores (+8% de força), **Centro de Combate** (+25% nos bônus da tripulação), Oficina de Drones, Computador Balístico, **Esteira de Munição** (carregador melhor), **Diretor de Tiro** (computador de tiro melhor) e Estabilizador Giroscópico. Carregadores e computadores de tiro agora somam os dois melhores.
+**Contramedidas** — **Defesa Pontual Rápida** (CIWS), **Defesa Pontual Longa**, **Laser de Defesa**, **Lançador de Chaff** (engana mísseis de radar), **Isca Antitorpedo** (engana torpedos guiados e acústicos), Bloqueador de Longo Alcance, **Interferidor de Torpedos**, **Gerador de Fumaça** (automático ao ser atingido), **Silenciador Acústico**, **Supressor Térmico** (mísseis térmicos curvam pior), **Cinto Desmagnetizador** (contra torpedos magnéticos e minas) e **Interferidor de Drones**.
+**Mudanças de regra**
+- Aletas agora têm valor próprio (aleta larga = 2 laterais) e podem somar velocidade, giro, aderência e furtividade; o painel de estatísticas mostra o valor.
+- Online: o servidor aceita as novas ogivas de morteiro (fumaça e mina); a fumaça não revela quem atirou e permite assinatura menor para quem leva fumaça; o sensor infravermelho e o radar antifurtivo valem na névoa de guerra do anfitrião.
+- Projetos antigos continuam funcionando sem alteração.
+
 ## v1.9.2 — armas nucleares só como balísticos
 - **Removidos** os 7 mísseis de cruzeiro especiais da v1.9.1 (nuclear, fragmentação, perfurante, incendiário, EMP, supersônico e anti-radiação) e o **torpedo nuclear**. Projetos salvos que usavam peças removidas as perdem automaticamente (sem quebrar o jogo).
 - **Novos mísseis balísticos** (marque no minimapa, lance com B): **Nuclear** (260 de raio, incendeia, atordoa, zera escudos e dá um clarão; recarga de 90 s), **MIRV** (6 ogivas em área), **Incendiário**, **EMP**, **Hipersônico** (chega em ~1 s) e **Perfurante** (dano enorme no ponto).

@@ -62,9 +62,12 @@ function renderStats(r) {
     `<div class="counts">${[
       ['🎯', s.cannons, 'Canhões'], ['💣', s.mortars, 'Morteiros'], ['🔫', s.mgs, 'Metralhadoras'],
       ['🚀', s.torps, 'Torpedos'], ['🎇', s.missiles, 'Mísseis'], ['⚙', s.engines, 'Motores'],
-      ['◣', s.lat, 'Aletas laterais'], ['▼', s.rear, 'Aletas traseiras'], ['✚', s.repairs, 'Reparos'],
+      ['◣', +s.lat.toFixed(1), 'Aletas laterais (valor)'], ['▼', +s.rear.toFixed(1), 'Aletas traseiras (valor)'], ['✚', s.repairs, 'Reparos'],
       ['🛡', s.shields, 'Escudos'], ['📡', s.pd, 'Defesa pontual'], ['💨', s.thrusters, 'Propulsores laterais'],
       ['🗡', s.melee, 'Armas corpo a corpo'], ['🎯', s.ballistics, 'Mísseis balísticos'], ['✨', s.flares, 'Lançadores de flares'], ['🧱', s.plates, 'Placas de convés'], ['🛩', s.hangars, 'Hangares de drone'], ['🚰', s.pumps, 'Bombas de esgoto'], ['🧯', s.sprinklers, 'Anti-incêndio'], ['👥', s.crewCount, 'Grupos de tripulação'],
+      ['📡', s.radars + s.lookouts + (s.aesa ? 1 : 0) + (s.irstR ? 1 : 0), 'Radares, vigias e sensores de calor'], ['🔊', s.sonars + s.pings + (s.bowSonar ? 1 : 0), 'Sonares'],
+      ['☁', s.smokers, 'Geradores de fumaça'], ['🎭', s.chaffs + s.decoys, 'Iscas (chaff e antitorpedo)'], ['📶', s.jammers + s.tjam + s.djam, 'Bloqueadores e interferidores'],
+      ['🛠', s.sealants + s.buoys + s.suppress + s.cutters + s.insul + s.dampers, 'Proteções de avaria'], ['⚙', s.boosters + s.cic + s.dronebays + s.ballcomps + s.gyros, 'Peças de apoio'],
     ].filter(c => c[1] > 0).map(c => `<span title="${c[2]}">${c[0]} ${c[1]}</span>`).join('')}</div>`;
   $('messages').innerHTML =
     r.errors.map(m => `<div class="msg err">⛔ ${m}</div>`).join('') +

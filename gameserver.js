@@ -20,7 +20,7 @@ const SHOT_KINDS = new Set(['shell', 'bullet', 'heavy', 'flame', 'rail', 'mortar
 const LOUD_SHOTS = new Set(['shell', 'rail', 'mortar', 'torp', 'missile', 'ballistic']);
 const DRONE_KINDS = ['recon', 'attack', 'kamikaze', 'escort', 'bomber', 'torpedo', 'swarm', 'aew'];
 const LOCK_KINDS = ['radar', 'heat', 'gps', 'tele', 'arm', 'acoustic'];
-const WARHEADS = ['nuke', 'cluster', 'ap', 'inc', 'emp', 'sonic', 'arm', 'mag', 'split', 'acoustic'];   // revelam quem atira
+const WARHEADS = ['nuke', 'cluster', 'ap', 'inc', 'emp', 'sonic', 'arm', 'mag', 'split', 'acoustic', 'smoke', 'mmine'];   // ogivas especiais (a fumaça não revela quem atira)
 
 function createGameServer() {
 const rooms = new Map();
@@ -108,6 +108,7 @@ function scoreboard(r) {
 const dstate = (p, now) => ({
   x: p.x, y: p.y, vision: p.vision, sonar: p.sonar, pingR: p.pingR, ping: now < p.pingUntil,
   sig: p.sig, reveal: now < p.revealUntil, revealR: p.revealR, sub: p.sub, quiet: p.quiet,
+  irst: (p.stats && p.stats.irstR) || 0, aesa: (p.stats && p.stats.aesa) || 0,
 });
 /** bots controlados (hospedados) pelo jogador q */
 const botsOf = (r, q) => { const out = []; for (const b of r.players.values()) if (b.owner === q.id) out.push(b); return out; };
@@ -420,7 +421,7 @@ function onMessage(p, raw) {
       p.vision = num(m.v, 0, p.stats.vision, p.stats.vision);
       p.sonar = num(m.sp, 0, p.stats.sonarR, 0);
       p.pingR = num(m.pr, 0, p.stats.pingR, 0);
-      p.sig = num(m.sg, p.stats.sig, 1, 1);
+      p.sig = num(m.sg, p.stats.smokers || p.stats.mortars ? p.stats.sig * 0.3 : p.stats.sig, 1, 1);      // só quem tem fumaça (gerador ou morteiro) pode ficar mais furtivo que o projeto
       p.dp = p.stats.sub ? num(m.dp, 0, 1) : 0; p.sub = p.dp > G.DEEP; p.quiet = num(m.qt, p.stats.quiet * 0.5, 1, 1);
       const out = { t: 'snap', id: p.id, x, y, a: num(m.a, -50, 50), vx: num(m.vx, -400, 400), vy: num(m.vy, -400, 400),
         fl: num(m.fl, 0, 1), sh: num(m.sh, 0, 500), v: p.vision, sp: p.sonar, pr: p.pingR, sg: p.sig, dp: p.dp, qt: p.quiet };
@@ -462,7 +463,7 @@ function onMessage(p, raw) {
         tx: num(m.tx, -4000, 4000), ty: num(m.ty, -4000, 4000), T: num(m.T, 0, 14), x0: num(m.x0, -4000, 4000), y0: num(m.y0, -4000, 4000), tg: clean(m.tg, 12),
         fuse: num(m.fuse, 0, 4), dmgSurf: num(m.dmgSurf, 0, 16), arm: num(m.arm, 0, 6),
         lk: LOCK_KINDS.includes(m.lk) ? m.lk : '', wh: WARHEADS.includes(m.wh) ? m.wh : '', sz: ['S', 'M', 'L', 'G'].includes(m.sz) ? m.sz : '', gx: num(m.gx, -4000, 4000), gy: num(m.gy, -4000, 4000) };
-      if (LOUD_SHOTS.has(m.kind)) { p.revealUntil = now + 1500; p.revealR = 900; }
+      if (LOUD_SHOTS.has(m.kind) && m.wh !== 'smoke') { p.revealUntil = now + 1500; p.revealR = 900; }
       const s = JSON.stringify(sh);
       for (const q of r.players.values()) {
         if (q === p || q.isBot || q.id === p.owner) continue;

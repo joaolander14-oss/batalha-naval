@@ -9,7 +9,7 @@
    A proa (frente) do navio aponta para CIMA da grade.
    ===================================================================== */
 
-const VERSION = '1.9.2';
+const VERSION = '2.0.0';
 const GRID_W = 13;
 const GRID_H = 17;
 const BASE_BUDGET = 220;
@@ -33,7 +33,7 @@ const HULL_CODES = new Set(['#', '=', 'o', '@', '%', 's', '1', '2', '3', '4', '5
 const isHull = c => HULL_CODES.has(c);
 const isBridge = c => c === 'B' || c === 'b' || c === 'U';
 const DEEP = 0.6;                                   // profundidade (0..1) a partir da qual o submarino está submerso
-const isFin = c => c === '<' || c === '>' || c === 'v';
+const isFin = c => !!c && !!PARTS[c] && PARTS[c].layer === 'fin';
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 /** diferença de ângulo a-b normalizada para [-PI, PI] */
 const angDiff = (a, b) => ((a - b + Math.PI) % TAU + TAU) % TAU - Math.PI;
@@ -318,6 +318,166 @@ const SPECIAL_TORPS = {
 };
 for (const code in SPECIAL_TORPS) PARTS[code] = Object.assign({ layer: 'top', kind: 'torp' }, SPECIAL_TORPS[code], { desc: SPECIAL_TORPS[code].desc + ' (Espaço ou botão direito)' });
 
+/* ================= v2.0: mais morteiros, aletas, sensores, avarias, apoio e contramedidas ================= */
+const def20 = (code, o) => (PARTS[code] = Object.assign({ layer: 'top' }, o));
+/** fumaça (morteiro de fumaça e gerador de fumaça) e minas lançadas por morteiro: valores fixos, iguais em todas as telas */
+const SMOKE_R = 125, SMOKE_LIFE = 17, SMOKE_SIG = 0.4;
+
+/* ---- morteiros (kind 'mortar'; `wh` = ogiva especial, `shots` = granadas por salva, `util` = a IA não usa) ---- */
+const MORTAR_NOTE = ' (Botão esquerdo)';
+def20('Б', { kind: 'mortar', name: 'Morteiro Leve', cost: 14, hp: 2, mass: 1.1, dmg: 2.5, reload: 1.8, speed: 280, range: 650, minRange: 100, splash: 34, scatter: 12, turn: 2.8,
+  art: { k: 'light', col: '#8fd18a' }, desc: 'Tubo pequeno e barato: granadas leves, recarga rápida e alcance curto. Enche o ar de explosões pequenas.' + MORTAR_NOTE });
+def20('Г', { kind: 'mortar', name: 'Morteiro Duplo', cost: 46, hp: 4, mass: 3.4, dmg: 4.5, reload: 3.4, speed: 260, range: 800, minRange: 140, splash: 46, scatter: 14, shots: 2, turn: 1.9,
+  art: { k: 'twin', col: '#e3c25a' }, desc: 'Dois tubos lado a lado: lança duas granadas por salva, um pouco abertas. Dobra o estrago contra alvos grandes.' + MORTAR_NOTE });
+def20('З', { kind: 'mortar', name: 'Morteiro de Rajada', cost: 40, hp: 3, mass: 2.6, dmg: 2.2, reload: 6, speed: 270, range: 700, minRange: 120, splash: 30, scatter: 22, shots: 4, turn: 2.0,
+  art: { k: 'burst', col: '#ffb347' }, desc: 'Cospe 4 granadas em sequência, espalhadas em volta do alvo. Cobre uma área grande e castiga quem tenta desviar.' + MORTAR_NOTE });
+def20('И', { kind: 'mortar', name: 'Morteiro de Longo Alcance', cost: 52, hp: 3, mass: 3.6, dmg: 5, reload: 6.5, speed: 340, range: 1400, minRange: 320, splash: 40, scatter: 26, turn: 1.3,
+  art: { k: 'long', col: '#7fd4ff' }, desc: 'Cano comprido: alcança 1400, bem além de qualquer canhão. Lento para recarregar e para girar, e não acerta perto.' + MORTAR_NOTE });
+def20('Й', { kind: 'mortar', name: 'Morteiro Incendiário', cost: 34, hp: 3, mass: 2.2, dmg: 2.2, reload: 4, speed: 260, range: 780, minRange: 140, splash: 56, scatter: 18, wh: 'inc', turn: 1.9,
+  art: { k: 'fire', col: '#ff7a1f' }, desc: 'Granada de napalm: pouco dano direto, mas quase toda peça atingida pega fogo. Letal contra munição e motores.' + MORTAR_NOTE });
+def20('Л', { kind: 'mortar', name: 'Morteiro de Fragmentação', cost: 38, hp: 3, mass: 2.4, dmg: 3, reload: 5, speed: 260, range: 780, minRange: 150, splash: 28, scatter: 14, wh: 'cluster', turn: 1.9,
+  art: { k: 'frag', col: '#b7c0ca' }, desc: 'A granada se abre no ar e solta 5 submunições numa área de 60 de raio. Ótimo contra cascos leves e vários alvos juntos.' + MORTAR_NOTE });
+def20('П', { kind: 'mortar', name: 'Morteiro de Fumaça', cost: 22, hp: 2, mass: 1.6, dmg: 0, reload: 9, speed: 270, range: 760, minRange: 120, splash: 20, scatter: 16, wh: 'smoke', util: true, turn: 2.2,
+  art: { k: 'smoke', col: '#c9d1da' }, desc: 'Cria uma nuvem de fumaça (' + SMOKE_R + ' de raio, ' + SMOKE_LIFE + ' s) no ponto do cursor. Quem está dentro só é visto de bem perto (40% da visão normal). Use para esconder aliados ou cegar o inimigo.' + MORTAR_NOTE });
+def20('Ч', { kind: 'mortar', name: 'Morteiro Eletromagnético', cost: 54, hp: 3, mass: 2.8, dmg: 1, reload: 13, speed: 250, range: 720, minRange: 150, splash: 88, scatter: 20, wh: 'emp', turn: 1.8,
+  art: { k: 'emp', col: '#4cc9ff' }, desc: 'Pulso eletromagnético de 88 de raio: zera os escudos e atordoa a tripulação inimiga por 7 s. Quase não fere. Recarrega devagar.' + MORTAR_NOTE });
+def20('Щ', { kind: 'mortar', name: 'Morteiro de Cerco', cost: 56, hp: 4, mass: 4.2, dmg: 13, reload: 7.5, speed: 230, range: 720, minRange: 200, splash: 22, scatter: 7, turn: 1.2,
+  art: { k: 'siege', col: '#e8503a' }, desc: 'Granada perfurante de explosão pequena e muito precisa, com dano altíssimo no ponto de impacto. Para quebrar peça por peça de um navio parado.' + MORTAR_NOTE });
+def20('Э', { kind: 'mortar', name: 'Morteiro de Fogo Rápido', cost: 30, hp: 3, mass: 2, dmg: 1.5, reload: 0.85, speed: 300, range: 620, minRange: 90, splash: 24, scatter: 18, turn: 3.2,
+  art: { k: 'rapid', col: '#f5e663' }, desc: 'Metralhadora de granadas: uma explosão pequena por menos de 1 s. Dano contínuo em quem não consegue sair da área.' + MORTAR_NOTE });
+def20('Ю', { kind: 'mortar', name: 'Morteiro Lança-minas', cost: 36, hp: 3, mass: 2.2, dmg: 12, reload: 9, speed: 250, range: 700, minRange: 120, splash: 48, scatter: 14, wh: 'mmine', util: true, turn: 2.0,
+  art: { k: 'mine', col: '#c0392b' }, desc: 'Em vez de explodir, a granada cai e vira uma MINA invisível ao inimigo no ponto do cursor (arma em 2,5 s, dura 40 s). Perfeito para fechar passagens.' + MORTAR_NOTE });
+
+/* ---- aletas: `attach` = célula de casco que a sustenta (relativa à aleta), `mirror` = versão do outro lado ---- */
+function defFin(code, fin, attach, o) { return (PARTS[code] = Object.assign({ layer: 'fin', fin, attach }, o)); }
+function defFinPair(l, r, o) {
+  defFin(l, 'lateral', [1, 0], Object.assign({ mirror: r, side: 1 }, o));
+  defFin(r, 'lateral', [-1, 0], Object.assign({ mirror: l, side: -1 }, o, { desc: '' }));
+}
+Object.assign(PARTS['<'], { attach: [1, 0], mirror: '>', side: 1, art: { k: 'std' } });
+Object.assign(PARTS['>'], { attach: [-1, 0], mirror: '<', side: -1, art: { k: 'std' } });
+Object.assign(PARTS['v'], { attach: [0, -1], art: { k: 'std' } });
+defFinPair('├', '┤', { name: 'Aleta Larga', cost: 7, hp: 4, mass: 0.9, latW: 2, art: { k: 'wide', col: '#f0933a' },
+  desc: 'Aleta grande: vale por DUAS aletas laterais comuns (derrapa menos e vira melhor). Fica ao lado do casco.' });
+defFinPair('╠', '╣', { name: 'Aleta Blindada', cost: 8, hp: 14, mass: 1.3, soak: 0.35, latW: 1, art: { k: 'armor', col: '#8a97a8' },
+  desc: 'Aleta de aço: age como lateral comum, mas aguenta muito mais tiros e protege a lateral do casco.' });
+defFinPair('┣', '┫', { name: 'Hidrofólio', cost: 12, hp: 3, mass: 0.6, latW: 0.5, speedB: 0.04, art: { k: 'foil', col: '#4cc9ff' },
+  desc: 'Asa submersa: +4% de velocidade máxima cada (a soma das aletas veloz vai até +25%) e ajuda um pouco nas curvas.' });
+defFinPair('┝', '┥', { name: 'Quilha Estabilizadora', cost: 6, hp: 5, mass: 1.2, latW: 0.4, gripB: 1.4, art: { k: 'keel', col: '#7bd86a' },
+  desc: 'Barbatana funda: o navio quase não derrapa (+1,4 de aderência), mas vira pouco. Ótima para plataformas de artilharia.' });
+defFinPair('╟', '╢', { name: 'Aleta Furtiva', cost: 9, hp: 3, mass: 0.5, latW: 1, stealth: 1, art: { k: 'stealth', col: '#a87cff' },
+  desc: 'Aleta que absorve radar: vale como lateral comum e conta como uma peça de casco furtivo na cobertura do navio.' });
+defFinPair('┠', '┨', { name: 'Hidroplano de Mergulho', cost: 10, hp: 3, mass: 0.7, latW: 0.5, diveB: 0.25, art: { k: 'dive', col: '#6ab0ff' },
+  desc: 'Para submarinos: mergulha e emerge 25% mais rápido (até 2 contam). Também ajuda um pouco nas curvas.' });
+defFinPair('┞', '┦', { name: 'Aleta a Jato', cost: 11, hp: 3, mass: 0.8, latW: 1, turnB: 0.12, art: { k: 'jet', col: '#ffb347' },
+  desc: 'Aleta lateral com microjato: vale como uma aleta comum e ainda soma 0,12 rad/s de giro.' });
+defFin('┬', 'rear', [0, -1], { name: 'Leme Duplo', cost: 9, hp: 4, mass: 1, rearW: 2, art: { k: 'rudder2', col: '#2fb5c4' },
+  desc: 'Dois lemes juntos na popa: vale por DUAS aletas traseiras comuns. Fica atrás de uma peça de casco.' });
+defFin('╤', 'rear', [0, -1], { name: 'Leme Blindado', cost: 8, hp: 14, mass: 1.4, soak: 0.35, rearW: 1, art: { k: 'armor', col: '#8a97a8' },
+  desc: 'Leme de aço: igual ao leme comum, mas aguenta muito mais dano (a popa é onde ficam os motores!).' });
+defFin('╦', 'rear', [0, -1], { name: 'Leme Vetorial', cost: 15, hp: 3, mass: 0.9, rearW: 1, turnB: 0.2, art: { k: 'vector', col: '#ffb347' },
+  desc: 'Leme com jato direcional: vale como leme comum e soma mais 0,2 rad/s de giro, mesmo em baixa velocidade.' });
+defFin('╥', 'rear', [0, -1], { name: 'Skeg de Popa', cost: 7, hp: 4, mass: 0.8, rearW: 0.5, gripB: 0.6, speedB: 0.03, art: { k: 'skeg', col: '#7bd86a' },
+  desc: 'Barbatana de popa: segura a traseira (+0,6 de aderência) e rende +3% de velocidade máxima.' });
+defFin('┴', 'bow', [0, 1], { name: 'Proa Hidrodinâmica', cost: 8, hp: 4, mass: 0.5, speedB: 0.05, art: { k: 'bow', col: '#4cc9ff' },
+  desc: 'Cunha na PROA (logo à frente de uma peça de casco): corta a água e rende +5% de velocidade máxima.' });
+defFin('╧', 'bow', [0, 1], { name: 'Domo de Sonar de Proa', cost: 22, hp: 3, mass: 1, bowSonar: 450, art: { k: 'dome', col: '#3ac7ff' },
+  desc: 'Sonar passivo embutido na proa: escuta navios a até 450 sem ocupar espaço no convés. Fica à frente do casco.' });
+defFin('╩', 'bow', [0, 1], { name: 'Defletor de Proa', cost: 8, hp: 12, mass: 1.4, soak: 0.45, art: { k: 'deflect', col: '#8a97a8' },
+  desc: 'Chapa em ponta na proa: absorve os tiros frontais antes do casco (reduz 0,45 de cada um).' });
+
+/* ---- sensores e furtividade ---- */
+def20('Ř', { kind: 'radar', name: 'Radar de Longo Alcance', cost: 46, hp: 3, mass: 1.8, bonus: 520, art: { g: 'radarL', col: '#8dffb0' },
+  desc: 'Antena grande: +520 de alcance de visão (valem os 2 melhores radares do navio). Não enxerga furtivos nem funciona submerso.' });
+def20('Ţ', { kind: 'lookout', name: 'Mastro de Vigia', cost: 8, hp: 2, mass: 0.4, bonus: 140, art: { g: 'mast', col: '#e9d9a6' },
+  desc: 'Cesto de vigia no alto do mastro: +140 de visão (até 3), barato e leve. Não depende de eletrônica.' });
+def20('Š', { kind: 'sonar', name: 'Sonar Rebocado', cost: 46, hp: 2, mass: 2.4, range: 1250, art: { g: 'towed', col: '#3a8fb5' },
+  desc: 'Cabo de hidrofones: escuta navios a até 1250 sem se denunciar. Não pega navios furtivos.' });
+def20('Ş', { kind: 'sonarA', name: 'Sonar Ativo Compacto', cost: 26, hp: 2, mass: 1.2, range: 1000, every: 6, art: { g: 'sonarC', col: '#4cc9ff' },
+  desc: 'Pulso a cada 6 s: mostra todos em até 1000 por 2 s. Mais barato, mas revela a sua posição a quem estiver a 2200.' });
+def20('Ī', { kind: 'irst', name: 'Sensor Infravermelho', cost: 38, hp: 2, mass: 1.2, range: 850, art: { g: 'irst', col: '#ff9a3c' },
+  desc: 'Enxerga o calor dos motores: detecta navios a até 850 e ENXERGA PARCIALMENTE através da furtividade (metade). Navios parados ou silenciosos esquentam menos.' });
+def20('Ā', { kind: 'aesa', name: 'Radar Antifurtivo', cost: 52, hp: 3, mass: 1.6, floor: 0.45, art: { g: 'aesa', col: '#c18bff' },
+  desc: 'Radar de abertura sintética: nenhum navio fica mais "invisível" do que 45%. Anula quase toda a furtividade dentro da sua visão.' });
+def20('Ğ', { kind: 'threat', name: 'Detector de Ameaças', cost: 20, hp: 2, mass: 0.8, range: 1100, art: { g: 'threat', col: '#ff6a5c' },
+  desc: 'Alerta vermelho: mostra mísseis, torpedos e granadas inimigos a até 1100 de você, mesmo na névoa ou no escuro.' });
+def20('Ń', { kind: 'minedet', name: 'Detector de Minas', cost: 18, hp: 2, mass: 0.9, range: 420, art: { g: 'minedet', col: '#e3c25a' },
+  desc: 'Varredura do fundo: revela as minas inimigas a até 420 (normalmente você só as vê a 150).' });
+def20('Ł', { kind: 'rangefinder', name: 'Telêmetro Laser', cost: 26, hp: 2, mass: 0.9, art: { g: 'laser', col: '#ff5d5d' },
+  desc: 'Canhões e morteiros alcançam 10% mais longe e espalham 25% menos (até 2 telêmetros).' });
+def20('Ž', { kind: 'stealthgen', name: 'Gerador Furtivo Compacto', cost: 22, hp: 2, mass: 1.1, cover: 4, art: { g: 'stealthC', col: '#a87cff' },
+  desc: 'Equivale a 4 peças de casco furtivo na cobertura do navio. Menor e mais barato que o Gerador Furtivo.' });
+
+/* ---- controle de avarias ---- */
+def20('б', { kind: 'pump', name: 'Bomba Compacta', cost: 7, hp: 2, mass: 0.7, rate: 0.8, art: { g: 'pumpC', col: '#4cc9ff' },
+  desc: 'Bombinha barata: tira 0,8 de água por segundo. Valem as 3 melhores bombas do navio.' });
+def20('в', { kind: 'pump', name: 'Bomba de Alta Vazão', cost: 28, hp: 3, mass: 2.6, rate: 3.6, art: { g: 'pumpH', col: '#4cc9ff' },
+  desc: 'Bomba industrial: esvazia 3,6 de água por segundo. Uma só segura um rombo grande. Valem as 3 melhores bombas.' });
+def20('г', { kind: 'repair', name: 'Reparo Pesado', cost: 34, hp: 3, mass: 2, every: 0.8, radius: 4.2, amt: 1.5, art: { g: 'repairH', col: '#27a45a' },
+  desc: 'Oficina de combate: repara 1,5 de vida a cada 0,8 s numa área de 4 células. Muito mais rápido que o Reparo comum.' });
+def20('д', { kind: 'repair', name: 'Central de Reparos', cost: 62, hp: 4, mass: 2.8, every: 1, radius: 9, amt: 1.6, art: { g: 'repairC', col: '#7bf0a8' },
+  desc: 'Robôs de reparo por todo o casco: cura a peça mais ferida num raio de 9 células (quase o navio inteiro), 1,6 de vida por segundo.' });
+def20('ж', { kind: 'sprinkler', name: 'Extintor de Alta Capacidade', cost: 30, hp: 3, mass: 1.6, range: 5, every: 0.35, art: { g: 'extH', col: '#ff6a4d' },
+  desc: 'Espuma química: apaga um incêndio a cada 0,35 s em até 5 células. Fogo mal começa e já acaba.' });
+def20('з', { kind: 'sealant', name: 'Selante de Rombos', cost: 16, hp: 2, mass: 0.9, patch: 0.35, art: { g: 'seal', col: '#e3b93c' },
+  desc: 'Espuma que tampa furos: o alagamento entra 0,35 mais devagar por selante (até 3). Combina com bombas.' });
+def20('и', { kind: 'buoy', name: 'Câmara de Flutuação', cost: 12, hp: 3, mass: 0.6, cap: 8, art: { g: 'buoy', col: '#ff9a3c' },
+  desc: 'Bolsa de ar: o navio aguenta +8 de água antes de afundar (até 4 câmaras).' });
+def20('й', { kind: 'suppress', name: 'Supressor de Explosão', cost: 22, hp: 3, mass: 1.4, art: { g: 'suppress', col: '#ffb347' },
+  desc: 'Painéis anti-explosão: a chance de munição destruída explodir cai para 40% (2 supressores: 20%) e a explosão fere 60% menos.' });
+def20('к', { kind: 'cutter', name: 'Cortador de Cabos', cost: 12, hp: 2, mass: 0.6, art: { g: 'cutter', col: '#cfd8e2' },
+  desc: 'Corta o gancho de abordagem: o efeito do Gancho inimigo dura 4× menos (2 cortadores: 7× menos).' });
+def20('л', { kind: 'insul', name: 'Isolante de Choque', cost: 16, hp: 2, mass: 0.9, art: { g: 'insul', col: '#ffd93d' },
+  desc: 'Aterramento: o atordoamento elétrico da tripulação (Bobina, EMP) dura metade (2 isolantes: 25%).' });
+def20('м', { kind: 'dampener', name: 'Dissipador de Choque', cost: 24, hp: 3, mass: 1.8, art: { g: 'damp', col: '#9aa7b5' },
+  desc: 'Amortecedores em todo o casco: explosões (torpedo, míssil, morteiro, mina) causam 12% menos dano (até 3).' });
+
+/* ---- apoio ---- */
+def20('Ē', { kind: 'shield', name: 'Escudo Rápido', cost: 22, hp: 2, mass: 1.4, cap: 12, regen: 7, art: { g: 'shieldQ', col: '#7fe3ff' },
+  desc: 'Absorve só 12 pontos, mas recarrega 7 por segundo depois de 3 s sem apanhar. Bom contra metralhadoras e granadas pequenas.' });
+def20('Ė', { kind: 'shield', name: 'Escudo Pesado', cost: 74, hp: 4, mass: 4.2, cap: 60, regen: 3, art: { g: 'shieldH', col: '#4c8fff' },
+  desc: 'Campo reforçado: absorve 60 pontos (recarga 3/s). Pesado e caro, mas dá um colchão enorme contra torpedos.' });
+def20('Ę', { kind: 'booster', name: 'Compressor de Motores', cost: 20, hp: 2, mass: 1.4, art: { g: 'boost', col: '#ffb347' },
+  desc: 'Sobrealimenta os motores: +8% de força de propulsão cada (até 3).' });
+def20('Ě', { kind: 'cic', name: 'Centro de Combate', cost: 44, hp: 3, mass: 2.2, art: { g: 'cic', col: '#7bd86a' },
+  desc: 'Sala de operações: os bônus de toda a tripulação ficam 25% mais fortes (só vale um).' });
+def20('Ĝ', { kind: 'dronebay', name: 'Oficina de Drones', cost: 26, hp: 3, mass: 1.8, art: { g: 'dronebay', col: '#e3c25a' },
+  desc: 'Equipe de manutenção: seus hangares relançam os drones 30% mais rápido depois de uma perda (até 2 oficinas).' });
+def20('Ģ', { kind: 'ballcomp', name: 'Computador Balístico', cost: 40, hp: 2, mass: 1.4, art: { g: 'ballcomp', col: '#c18bff' },
+  desc: 'Cálculos de trajetória: mísseis balísticos espalham 40% menos e recarregam 10% mais rápido (só vale um).' });
+def20('Ĥ', { kind: 'loader', name: 'Esteira de Munição', cost: 42, hp: 3, mass: 2.6, factor: 0.78, art: { g: 'belt', col: '#e3c25a' },
+  desc: 'Carregador de alta velocidade: todas as armas recarregam 22% mais rápido. Soma com o Carregador Automático (valem os 2 melhores).' });
+def20('Ħ', { kind: 'fcs', name: 'Diretor de Tiro', cost: 40, hp: 2, mass: 1.4, turnB: 0.4, scat: 0.4, art: { g: 'fcsA', col: '#7bd86a' },
+  desc: 'Computador de tiro avançado: torres 40% mais rápidas e morteiros espalham 40% menos. Soma com o Computador de Tiro (valem os 2 melhores).' });
+def20('Ĩ', { kind: 'gyro', name: 'Estabilizador Giroscópico', cost: 18, hp: 2, mass: 1.6, art: { g: 'gyro', col: '#9fb8c4' },
+  desc: 'Giroscópio: +10% na velocidade de giro do navio (até 2).' });
+
+/* ---- contramedidas ---- */
+def20('н', { kind: 'pd', name: 'Defesa Pontual Rápida', cost: 52, hp: 3, mass: 2, range: 140, reload: 0.15, acc: 1, art: { k: 'ciws', col: '#ffd93d' },
+  desc: 'Canhão rotativo de 6 canos: dispara a cada 0,15 s (mais de 3× a cadência da Defesa Pontual comum). Alcance curto (140): última linha contra salvas de mísseis e drones.' });
+def20('п', { kind: 'pd', name: 'Defesa Pontual Longa', cost: 38, hp: 3, mass: 1.8, range: 330, reload: 0.8, acc: 1, art: { k: 'pdlong', col: '#7fd4ff' },
+  desc: 'Torre de longo alcance (330): começa a derrubar ameaças bem antes, mas atira devagar. Boa combinada com a Defesa Rápida.' });
+def20('т', { kind: 'pd', name: 'Laser de Defesa', cost: 70, hp: 3, mass: 2.4, range: 220, reload: 0.3, acc: 1, laser: true, art: { k: 'laserd', col: '#ff5d5d' },
+  desc: 'Feixe de energia instantâneo: 220 de alcance e mais de 3 tiros por segundo, sem se importar com a velocidade do alvo (acerta até mísseis supersônicos). Derruba também granadas de morteiro.' });
+def20('ф', { kind: 'chaff', name: 'Lançador de Chaff', cost: 18, hp: 2, mass: 0.9, reload: 7, salvo: 5, life: 5, range: 380, art: { g: 'chaff', col: '#cfd8e2' },
+  desc: 'Nuvens de tiras metálicas: quando um míssil com RADAR se aproxima, a salva o engana (30% de chance por tira). Não adianta contra GPS, teleguiado ou térmico.' });
+def20('ц', { kind: 'decoy', name: 'Isca Antitorpedo', cost: 24, hp: 2, mass: 1, reload: 8, salvo: 3, life: 7, range: 420, art: { g: 'decoy', col: '#7fe3ff' },
+  desc: 'Barulho falso na água: quando um torpedo guiado ou acústico se aproxima, solta iscas sonoras que o desviam (40% de chance por isca).' });
+def20('ч', { kind: 'jammer', name: 'Bloqueador de Longo Alcance', cost: 56, hp: 3, mass: 2, range: 440, art: { g: 'jamL', col: '#7bd86a' },
+  desc: 'Guerra eletrônica pesada: mísseis de radar e teleguiados que chegam a 440 perdem a guiagem. Não afeta térmicos, GPS ou acústicos.' });
+def20('ш', { kind: 'tjammer', name: 'Interferidor de Torpedos', cost: 32, hp: 2, mass: 1.2, range: 280, art: { g: 'tjam', col: '#4cc9ff' },
+  desc: 'Sonar de interferência: torpedos guiados (inclusive acústicos) que chegam a 280 perdem o rumo e saem voando sem direção.' });
+def20('щ', { kind: 'smoker', name: 'Gerador de Fumaça', cost: 20, hp: 2, mass: 1.2, reload: 18, art: { g: 'smoker', col: '#c9d1da' },
+  desc: 'Automático: ao levar um tiro (ou com míssil/torpedo guiado a 450), o navio solta uma nuvem de fumaça em volta de si (' + SMOKE_R + ' de raio, ' + SMOKE_LIFE + ' s). Dentro dela só é visto de perto. Recarrega em 18 s.' });
+def20('ы', { kind: 'silencer', name: 'Silenciador Acústico', cost: 26, hp: 2, mass: 1.6, art: { g: 'silencer', col: '#a87cff' },
+  desc: 'Calços e revestimento antirruído: o sonar passivo inimigo ouve 30% menos longe, e torpedos acústicos têm mais dificuldade (até 2).' });
+def20('э', { kind: 'irsupp', name: 'Supressor Térmico', cost: 24, hp: 2, mass: 1.2, art: { g: 'irsupp', col: '#ff9a3c' },
+  desc: 'Mistura ar frio no escapamento: mísseis térmicos curvam 30% pior contra você (até 2). Por isso erram mais.' });
+def20('ю', { kind: 'degauss', name: 'Cinto Desmagnetizador', cost: 30, hp: 2, mass: 1.8, art: { g: 'degauss', col: '#e8503a' },
+  desc: 'Anula o campo magnético do casco: torpedos magnéticos não detonam sob você (e se baterem no casco causam só 40% do dano) e as minas só explodem se encostarem de fato no centro de uma peça.' });
+def20('я', { kind: 'djammer', name: 'Interferidor de Drones', cost: 36, hp: 2, mass: 1.2, range: 300, art: { g: 'djam', col: '#ffb347' },
+  desc: 'Corta o link de rádio: drones inimigos a até 300 caem rapidamente (cerca de 1 por segundo).' });
+
 /** grupos da paleta, na ordem em que aparecem */
 const GROUP_ORDER = ['Casco', 'Blindagem de convés', 'Ponte', 'Aletas', 'Canhões', 'Morteiros', 'Metralhadoras', 'Corpo a corpo', 'Torpedos',
   'Mísseis de cruzeiro', 'Mísseis balísticos', 'Drones', 'Propulsão', 'Submarino', 'Controle de avarias', 'Sensores e furtividade', 'Apoio', 'Contramedidas',
@@ -411,6 +571,13 @@ const TOOLS = [
   for (const c of ['φ', 'χ', 'ψ', 'ω', 'Σ']) add(c, 'Blindagem de convés');
   for (const c in SPECIAL_BALLISTICS) add(c, 'Mísseis balísticos');
   for (const c in SPECIAL_TORPS) add(c, 'Torpedos');
+  /* v2.0 */
+  for (const c of ['Б', 'Г', 'З', 'И', 'Й', 'Л', 'П', 'Ч', 'Щ', 'Э', 'Ю']) add(c, 'Morteiros');
+  for (const c of ['├', '╠', '┣', '┝', '╟', '┠', '┞', '┬', '╤', '╦', '╥', '┴', '╧', '╩']) add(c, 'Aletas');
+  for (const c of ['Ř', 'Ţ', 'Š', 'Ş', 'Ī', 'Ā', 'Ğ', 'Ń', 'Ł', 'Ž']) add(c, 'Sensores e furtividade');
+  for (const c of ['б', 'в', 'г', 'д', 'ж', 'з', 'и', 'й', 'к', 'л', 'м']) add(c, 'Controle de avarias');
+  for (const c of ['Ē', 'Ė', 'Ę', 'Ě', 'Ĝ', 'Ģ', 'Ĥ', 'Ħ', 'Ĩ']) add(c, 'Apoio');
+  for (const c of ['н', 'п', 'т', 'ф', 'ц', 'ч', 'ш', 'щ', 'ы', 'э', 'ю', 'я']) add(c, 'Contramedidas');
   const ord = TOOLS.map((t, i) => [t, i]);
   ord.sort((a, b) => (GROUP_ORDER.indexOf(a[0].group) - GROUP_ORDER.indexOf(b[0].group)) || (a[1] - b[1]));
   TOOLS.length = 0; for (const [t] of ord) TOOLS.push(t);
@@ -429,11 +596,20 @@ function shipStats(cells) {
     radars: 0, sonars: 0, sonarR: 0, pings: 0, pingR: 0, jammers: 0, loaders: 0, fcs: 0, stealthW: 0, hullCount: 0,
     sub: false, periscopes: 0, ballast: 0, batteries: 0, mines: 0, depths: 0, thrustSub: 0, silentThrust: 0, nuclear: false, turnBonus: 0,
     melee: 0, meleeKinds: {}, pumps: 0, sprinklers: 0, hangars: 0, droneKinds: {}, floats: 0, bulkheads: 0, crew: {}, crewCount: 0,
-    ballistics: 0, flares: 0, lockKinds: {}, plates: 0, nukes: 0 };
+    ballistics: 0, flares: 0, lockKinds: {}, plates: 0, nukes: 0,
+    // v2.0
+    lookouts: 0, irstR: 0, aesa: 0, threatR: 0, mineDetR: 0, rangeFinders: 0, sealants: 0, buoys: 0, suppress: 0, cutters: 0, insul: 0, dampers: 0,
+    boosters: 0, cic: 0, dronebays: 0, ballcomps: 0, gyros: 0, silencers: 0, irsupp: 0, degauss: 0, djam: 0, smokers: 0, tjam: 0, chaffs: 0, decoys: 0,
+    finSpeed: 0, finGrip: 0, finTurn: 0, finDive: 0, diveFins: 0, bowSonar: 0, radarB: [], pumpR: [], loadF: [], fcsT: [], fcsS: [] };
   for (const c of cells) {
     const b = PARTS[c.base];
     s.mass += b.mass; s.hp += b.hp; s.cost += b.cost; s.count++;
-    if (b.fin === 'lateral') s.lat++; else if (b.fin === 'rear') s.rear++;
+    if (b.fin === 'lateral') s.lat += b.latW === undefined ? 1 : b.latW; else if (b.fin === 'rear') s.rear += b.rearW === undefined ? 1 : b.rearW;
+    if (b.layer === 'fin') {
+      s.finSpeed += b.speedB || 0; s.finGrip += b.gripB || 0; s.finTurn += b.turnB || 0; s.stealthW += b.stealth || 0;
+      if (b.diveB && ++s.diveFins <= 2) s.finDive += b.diveB;
+      if (b.bowSonar) s.bowSonar = Math.max(s.bowSonar, b.bowSonar);
+    }
     if (isHull(c.base)) { s.hullCount++; s.stealthW += b.stealth || 0; }
     if (b.sub) s.sub = true;
     if (b.float) s.floats++;
@@ -445,7 +621,7 @@ function shipStats(cells) {
     if (t.nuke) s.nukes++;
     switch (t.kind) {
       case 'cannon': s.cannons++; s.dps += t.dmg * t.shots / t.reload; break;
-      case 'mortar': s.mortars++; s.dps += t.dmg / t.reload * 0.6; break;
+      case 'mortar': s.mortars++; s.dps += t.dmg * (t.shots || 1) / t.reload * 0.6; break;
       case 'mg': s.mgs++; s.dps += t.dmg / t.reload * 0.6; break;
       case 'torp': s.torps++; s.dps += t.dmg / t.reload * 0.8; break;
       case 'missile': s.missiles++; s.lockKinds[t.lock || 'radar'] = (s.lockKinds[t.lock || 'radar'] || 0) + 1; s.dps += t.dmg / t.reload * 0.8; break;
@@ -455,13 +631,38 @@ function shipStats(cells) {
       case 'shield': s.shields++; s.shield += t.cap; s.regen += t.regen; break;
       case 'pd': s.pd++; break;
       case 'thruster': s.thrusters++; break;
-      case 'radar': s.radars++; break;
+      case 'radar': s.radars++; s.radarB.push(t.bonus); break;
+      case 'lookout': s.lookouts++; break;
+      case 'irst': s.irstR = Math.max(s.irstR, t.range); break;
+      case 'aesa': s.aesa = Math.max(s.aesa, t.floor); break;
+      case 'threat': s.threatR = Math.max(s.threatR, t.range); break;
+      case 'minedet': s.mineDetR = Math.max(s.mineDetR, t.range); break;
+      case 'rangefinder': s.rangeFinders++; break;
+      case 'sealant': s.sealants++; break;
+      case 'buoy': s.buoys++; break;
+      case 'suppress': s.suppress++; break;
+      case 'cutter': s.cutters++; break;
+      case 'insul': s.insul++; break;
+      case 'dampener': s.dampers++; break;
+      case 'booster': s.boosters++; break;
+      case 'cic': s.cic++; break;
+      case 'dronebay': s.dronebays++; break;
+      case 'ballcomp': s.ballcomps++; break;
+      case 'gyro': s.gyros++; break;
+      case 'silencer': s.silencers++; break;
+      case 'irsupp': s.irsupp++; break;
+      case 'degauss': s.degauss++; break;
+      case 'djammer': s.djam++; break;
+      case 'smoker': s.smokers++; break;
+      case 'tjammer': s.tjam++; break;
+      case 'chaff': s.chaffs++; break;
+      case 'decoy': s.decoys++; break;
       case 'sonar': s.sonars++; s.sonarR = Math.max(s.sonarR, t.range); break;
       case 'sonarA': s.pings++; s.pingR = Math.max(s.pingR, t.range); break;
       case 'stealthgen': s.stealthW += t.cover; break;
       case 'jammer': s.jammers++; break;
-      case 'loader': s.loaders++; break;
-      case 'fcs': s.fcs++; break;
+      case 'loader': s.loaders++; s.loadF.push(t.factor || 0.85); break;
+      case 'fcs': s.fcs++; s.fcsT.push(t.turnB === undefined ? 0.25 : t.turnB); s.fcsS.push(t.scat === undefined ? 0.3 : t.scat); break;
       case 'engine':
         s.engines++; s.thrust += t.thrust; s.thrustSub += t.thrust * (t.electric ? 1 : 0.55);
         if (t.silent) s.silentThrust += t.thrust;
@@ -474,31 +675,47 @@ function shipStats(cells) {
       case 'mine': s.mines++; s.dps += t.dmg / t.reload * 0.4; break;
       case 'depth': s.depths++; s.dps += t.dmg / t.reload * 0.3; break;
       case 'melee': s.melee++; s.meleeKinds[t.mkind] = (s.meleeKinds[t.mkind] || 0) + 1; s.dps += { spike: 4, saw: 9, ram: 5, hook: 1.5, shock: 2 }[t.mkind] || 0; break;
-      case 'pump': s.pumps++; break;
+      case 'pump': s.pumps++; s.pumpR.push(t.rate); break;
       case 'sprinkler': s.sprinklers++; break;
       case 'hangar': s.hangars++; s.droneKinds[t.drone] = (s.droneKinds[t.drone] || 0) + 1; s.dps += { attack: 4, kamikaze: 3, bomber: 5, torpedo: 3, swarm: 3, escort: 2 }[t.drone] || 0; break;
       case 'repair': s.repairs++; break;
     }
   }
   const m = Math.max(s.mass, 1);
+  const boost = 1 + 0.08 * Math.min(3, s.boosters);           // compressores de motor
+  s.thrust *= boost; s.thrustSub *= boost; s.silentThrust *= boost;
+  const top = (arr, n) => arr.slice().sort((a, b) => b - a).slice(0, n);
+  const sum = arr => arr.reduce((a, b) => a + b, 0);
   s.weapons = s.cannons + s.mortars + s.mgs + s.torps + s.missiles + s.ballistics + s.mines + s.depths + s.melee + (s.droneKinds.attack || 0) + (s.droneKinds.kamikaze || 0) + (s.droneKinds.bomber || 0) + (s.droneKinds.torpedo || 0) + (s.droneKinds.swarm || 0) + (s.droneKinds.escort || 0);
-  s.maxSpeed = Math.min(300, s.thrust / m * 45);          // px/s
+  const fastK = 1 + Math.min(0.25, s.finSpeed);            // hidrofólios, skegs e proas hidrodinâmicas
+  s.maxSpeed = Math.min(300, s.thrust / m * 45) * fastK;  // px/s
   s.accel = s.maxSpeed * 0.25;                             // arrasto longitudinal = 0.25/s
-  s.turn = (0.55 + 0.28 * s.lat + 0.5 * s.rear + 0.3 * s.thrusters + s.turnBonus) * clamp(Math.sqrt(25 / m), 0.45, 1.4); // rad/s
-  s.grip = 0.6 + 0.9 * s.lat + 0.4 * s.rear;               // resistência à derrapagem
+  s.turn = (0.55 + 0.28 * s.lat + 0.5 * s.rear + 0.3 * s.thrusters + s.turnBonus + s.finTurn) * clamp(Math.sqrt(25 / m), 0.45, 1.4) * (1 + 0.1 * Math.min(2, s.gyros)); // rad/s
+  s.grip = 0.6 + 0.9 * s.lat + 0.4 * s.rear + s.finGrip;   // resistência à derrapagem
   // visão, sensores e furtividade
-  s.vision = VISION_BASE + 300 * Math.min(2, s.radars);
+  s.vision = VISION_BASE + sum(top(s.radarB, 2)) + 140 * Math.min(3, s.lookouts);
+  s.sonarR = Math.max(s.sonarR, s.bowSonar);
   s.cover = s.hullCount ? Math.min(1, s.stealthW / s.hullCount) : 0;
   s.sig = clamp(1 - s.cover / STEALTH_FULL, 0, 1);         // 1 = totalmente visível, 0 = furtivo
-  s.loadMul = Math.pow(0.85, Math.min(2, s.loaders));
-  s.turnMul = 1 + 0.25 * Math.min(2, s.fcs);
-  s.scatterMul = 1 - 0.3 * Math.min(2, s.fcs);
+  s.rangeMul = 1 + 0.1 * Math.min(2, s.rangeFinders);      // telêmetros: canhões e morteiros chegam mais longe
+  const lf = s.loadF.slice().sort((a, b) => a - b);        // os 2 melhores carregadores
+  s.loadMul = (lf[0] || 1) * (lf[1] || 1);
+  s.turnMul = 1 + sum(top(s.fcsT, 2));
+  s.scatterMul = Math.max(0.2, 1 - sum(top(s.fcsS, 2))) * Math.pow(0.75, Math.min(2, s.rangeFinders));
+  // avarias e apoio
+  s.pumpRate = sum(top(s.pumpR, 3));                       // água bombeada por segundo (as 3 melhores bombas)
+  s.sealPatch = 0.35 * Math.min(3, s.sealants);
+  s.floodBonus = 8 * Math.min(4, s.buoys);
+  s.blastMul = Math.pow(0.88, Math.min(3, s.dampers));
+  s.crewMul = 1 + 0.25 * Math.min(1, s.cic);
+  s.dockMul = Math.pow(0.7, Math.min(2, s.dronebays));
+  s.ballScat = s.ballcomps ? 0.6 : 1; s.ballLoad = s.ballcomps ? 0.9 : 1;
   // submarino: velocidade submersa, bateria, mergulho e ruído
-  s.maxSpeedSub = Math.min(300, s.thrustSub / m * 45);
+  s.maxSpeedSub = Math.min(300, s.thrustSub / m * 45) * fastK;
   s.accelSub = s.maxSpeedSub * 0.25;
   s.battery = s.sub ? 60 + 35 * Math.min(3, s.batteries) : 0;
-  s.diveMul = 1 + 0.5 * Math.min(2, s.ballast);
-  s.quiet = s.thrust ? 1 - 0.5 * (s.silentThrust / s.thrust) : 1;   // 1 = barulhento; o sonar passivo ouve menos longe quanto menor
+  s.diveMul = 1 + 0.5 * Math.min(2, s.ballast) + s.finDive;
+  s.quiet = (s.thrust ? 1 - 0.5 * (s.silentThrust / s.thrust) : 1) * Math.pow(0.7, Math.min(2, s.silencers));   // 1 = barulhento; o sonar passivo ouve menos longe quanto menor
   return s;
 }
 
@@ -510,8 +727,9 @@ function detects(o, t) {
   if (d < (t.sub ? 110 : REVEAL_NEAR)) return true;       // a olho nu, colado (submerso: bem mais perto)
   if (t.reveal && d < t.revealR) return true;             // acabou de atirar ou emitir pulso
   const sig = t.sig;
-  if (!t.sub && d < o.vision * sig) return true;          // visão normal (submarino submerso não aparece)
   const q = t.quiet === undefined ? 1 : t.quiet;          // navio silencioso/parado é mais difícil de ouvir
+  if (!t.sub && d < o.vision * (o.aesa ? Math.max(sig, o.aesa) : sig)) return true;     // visão normal (submarino submerso não aparece); radar antifurtivo limita a furtividade
+  if (o.irst && !t.sub && d < o.irst * Math.max(sig, 0.5) * q) return true;              // infravermelho: vê o calor dos motores, atravessa metade da furtividade
   if (o.sonar && d < o.sonar * sig * q) return true;      // sonar passivo
   if (o.ping && d < o.pingR * sig) return true;           // pulso do sonar ativo
   return false;
@@ -563,9 +781,7 @@ function validateDesign(d, budget, rules) {
         if (t && (!isHull(h) || isBridge(h))) return { ok: false, error: 'Peça sem casco por baixo.' };
         if (isBridge(h)) bridges++;
         if (isHull(h)) hulls++;
-        if (h === '<' && !isHull(at(x + 1, y))) return { ok: false, error: 'Aleta solta.' };
-        if (h === '>' && !isHull(at(x - 1, y))) return { ok: false, error: 'Aleta solta.' };
-        if (h === 'v' && !isHull(at(x, y - 1))) return { ok: false, error: 'Aleta solta.' };
+        if (h && PARTS[h].layer === 'fin' && !isHull(at(x + PARTS[h].attach[0], y + PARTS[h].attach[1]))) return { ok: false, error: 'Aleta solta.' };
       }
     }
     if (d.crew !== undefined) {
@@ -595,8 +811,9 @@ function validateDesign(d, budget, rules) {
       for (let y = 0; y < GRID_H; y++) for (let x = 0; x < GRID_W; x++) {
         const h = d.hull[y][x], t = d.top[y][x];
         if (h === 'U') sub = true;
-        if (h === 's' || t === 'Q') stealth = true;
+        if (h === 's' || (h && PARTS[h].stealth)) stealth = true;
         const tp = t && PARTS[t];
+        if (tp && tp.kind === 'stealthgen') stealth = true;
         if (t === 'a' || (tp && (tp.kind === 'missile' || tp.kind === 'ballistic'))) guided = true;
         if (tp && tp.nuke) nuke = true;
       }
@@ -1660,6 +1877,8 @@ function drawBase(ctx, code, cs, o = {}) {
       ctx.strokeStyle = '#1b7580'; ctx.lineWidth = 1.5; ctx.stroke();
       ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillRect(-1, -h + 2, 2, cs * 0.7);
       break;
+    default:
+      if (isFin(code) && PARTS[code].art && PARTS[code].art.col) drawFin20(ctx, code, cs);       // aletas da v2.0
   }
   if (o.dmg > 0.25) cracks(ctx, cs, o.dmg, o.seed || 1);
   if (o.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${Math.min(0.7, o.flash * 5)})`; ctx.fillRect(-h, -h, cs, cs); }
@@ -1684,7 +1903,7 @@ function drawFlame(ctx, code, cs, f, time) {
 /** peça montada por cima do casco. o: {ang, recoil} (ang relativo ao navio) */
 function drawTop(ctx, code, cs, o = {}) {
   const ang = o.ang || 0;
-  if (drawV191(ctx, code, cs, o) || drawV19(ctx, code, cs, o)) return;
+  if (drawV20(ctx, code, cs, o) || drawV191(ctx, code, cs, o) || drawV19(ctx, code, cs, o)) return;
   switch (code) {
     case 'c': case 'd': {
       const dbl = code === 'd', bw = cs * 0.13;
@@ -2178,4 +2397,327 @@ function drawV191(ctx, code, cs, o) {
     return true;
   }
   return false;
+}
+
+/* ================= v2.0: desenho das peças novas ================= */
+/** aletas da v2.0. Desenhadas como a versão da ESQUERDA (presa ao casco em x = +h); a da direita é o espelho. */
+function drawFin20(ctx, code, cs) {
+  const P = PARTS[code], A = P.art, h = cs / 2, col = A.col;
+  ctx.save();
+  if (P.fin === 'lateral' && P.side === -1) ctx.scale(-1, 1);
+  ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
+  const fill = (pts, f, s) => { poly(ctx, pts); ctx.fillStyle = f || col; ctx.fill(); ctx.strokeStyle = s || 'rgba(0,0,0,.5)'; ctx.stroke(); };
+  const hi = pts => { poly(ctx, pts); ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.fill(); };
+  const dot = (x, y, r, f) => { ctx.fillStyle = f; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); };
+  switch (A.k) {
+    case 'wide':
+      fill([[h, -h * 0.98], [h, h * 0.98], [-h * 0.98, h]]); hi([[h * 0.85, -h * 0.45], [h * 0.85, h * 0.7], [-h * 0.4, h * 0.82]]); break;
+    case 'armor':
+      if (P.fin === 'lateral') {
+        fill([[h, -h * 0.7], [h, h * 0.85], [-h * 0.7, h * 0.92], [-h * 0.92, -h * 0.1]], '#5d6878'); fill([[h * 0.8, -h * 0.45], [h * 0.8, h * 0.6], [-h * 0.45, h * 0.68], [-h * 0.6, -h * 0.05]], '#8a97a8', 'rgba(0,0,0,.25)');
+        dot(h * 0.5, -h * 0.3, 1.4, '#2a313b'); dot(h * 0.5, h * 0.4, 1.4, '#2a313b');
+      } else {
+        fill([[-h * 0.7, -h], [h * 0.7, -h], [h * 0.5, h * 0.95], [-h * 0.5, h * 0.95]], '#5d6878'); fill([[-h * 0.45, -h * 0.8], [h * 0.45, -h * 0.8], [h * 0.3, h * 0.75], [-h * 0.3, h * 0.75]], '#8a97a8', 'rgba(0,0,0,.25)');
+        dot(0, -h * 0.4, 1.4, '#2a313b'); dot(0, h * 0.35, 1.4, '#2a313b');
+      }
+      break;
+    case 'foil':
+      fill([[h, -h * 0.3], [h, h * 0.15], [-h, h * 0.55], [-h, h * 0.1]]); fill([[h, h * 0.45], [h, h * 0.8], [-h * 0.5, h * 0.95], [-h * 0.5, h * 0.7]]);
+      dot(h * 0.78, -h * 0.05, 2, '#fff'); break;
+    case 'keel':
+      fill([[h, -h * 0.95], [h, h * 0.95], [h * 0.05, h * 0.95], [h * 0.05, -h * 0.95]]);
+      ctx.strokeStyle = 'rgba(255,255,255,.4)'; ctx.beginPath(); for (let i = -2; i <= 2; i++) { ctx.moveTo(h * 0.1, i * h * 0.36); ctx.lineTo(h * 0.95, i * h * 0.36); } ctx.stroke(); break;
+    case 'stealth':
+      fill([[h, -h * 0.75], [h, h * 0.85], [-h * 0.95, h * 0.95]], '#1c1a26', col);
+      ctx.strokeStyle = 'rgba(168,124,255,.55)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(h, -h * 0.75); ctx.lineTo(-h * 0.2, h * 0.5); ctx.moveTo(h, h * 0.85); ctx.lineTo(h * 0.2, -h * 0.1); ctx.stroke(); break;
+    case 'dive':
+      fill([[h, -h * 0.85], [h, -h * 0.3], [-h * 0.7, -h * 0.05], [-h * 0.7, -h * 0.55]]); fill([[h, h * 0.3], [h, h * 0.85], [-h * 0.7, h * 0.95], [-h * 0.7, h * 0.45]]);
+      dot(h * 0.8, 0, 2.2, '#fff'); break;
+    case 'jet':
+      fill([[h, -h * 0.75], [h, h * 0.85], [-h * 0.95, h * 0.95]]); hi([[h * 0.8, -h * 0.35], [h * 0.8, h * 0.6], [-h * 0.4, h * 0.7]]);
+      dot(-h * 0.62, h * 0.82, h * 0.2, '#2a2f36'); dot(-h * 0.62, h * 0.82, h * 0.1, '#ffe28a'); break;
+    case 'rudder2':
+      for (const ox of [-h * 0.42, h * 0.42]) { fill([[ox - h * 0.3, -h], [ox + h * 0.3, -h], [ox + h * 0.2, h * 0.95], [ox - h * 0.2, h * 0.95]]); ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillRect(ox - 1, -h + 2, 2, cs * 0.7); }
+      break;
+    case 'vector':
+      fill([[-h * 0.65, -h], [h * 0.65, -h], [h * 0.42, h * 0.8], [-h * 0.42, h * 0.8]]);
+      for (const ox of [-h * 0.3, h * 0.3]) { dot(ox, h * 0.82, h * 0.17, '#2a2f36'); dot(ox, h * 0.82, h * 0.09, '#ffe28a'); } break;
+    case 'skeg':
+      fill([[-h * 0.24, -h], [h * 0.24, -h], [h * 0.17, h * 0.98], [-h * 0.17, h * 0.98]]); fill([[-h * 0.5, h * 0.55], [h * 0.5, h * 0.55], [h * 0.34, h * 0.98], [-h * 0.34, h * 0.98]]); break;
+    case 'bow':
+      fill([[-h * 0.72, h], [h * 0.72, h], [0, -h * 0.98]]); hi([[-h * 0.3, h * 0.75], [h * 0.05, h * 0.75], [0, -h * 0.3]]); break;
+    case 'dome':
+      ctx.beginPath(); ctx.ellipse(0, h, h * 0.8, h * 1.9, 0, Math.PI, TAU); ctx.closePath(); ctx.fillStyle = '#12303f'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.8; ctx.stroke();
+      ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(160,235,255,.7)';
+      for (let i = 1; i <= 2; i++) { ctx.beginPath(); ctx.arc(0, h * 0.35, h * 0.2 * i, -2.3, -0.8); ctx.stroke(); }
+      dot(0, h * 0.35, 2, '#bff3ff'); break;
+    case 'deflect':
+      fill([[-h * 0.88, h], [0, -h * 0.92], [h * 0.88, h], [h * 0.52, h], [0, -h * 0.3], [-h * 0.52, h]], '#7a8696'); break;
+  }
+  ctx.restore();
+}
+
+/** morteiros da v2.0: base redonda + 1 a 4 tubos que giram para o alvo, com uma faixa colorida e um símbolo da granada */
+function drawMortar20(ctx, P, A, cs, o) {
+  const ang = (o && o.ang) || 0, rec = ((o && o.recoil) || 0) * cs * 0.1, col = A.col;
+  const R = cs * ({ light: 0.3, twin: 0.42, burst: 0.4, long: 0.34, siege: 0.46 }[A.k] || 0.36);
+  ctx.save(); ctx.rotate(ang);
+  ctx.fillStyle = '#2b3a2e'; ctx.strokeStyle = '#141c16'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, TAU); ctx.fill(); ctx.stroke();
+  const barrel = (ox, w, len) => {
+    ctx.fillStyle = '#4a6650'; ctx.fillRect(ox - w / 2, -len + rec, w, len); ctx.strokeRect(ox - w / 2, -len + rec, w, len);
+    ctx.fillStyle = col; ctx.fillRect(ox - w / 2, -len + rec, w, cs * 0.07);
+    ctx.fillStyle = '#0c120e'; ctx.beginPath(); ctx.ellipse(ox, -len + rec, w * 0.38, w * 0.2, 0, 0, TAU); ctx.fill();
+  };
+  switch (A.k) {
+    case 'twin': barrel(-cs * 0.15, cs * 0.2, cs * 0.5); barrel(cs * 0.15, cs * 0.2, cs * 0.5); break;
+    case 'burst': for (const ox of [-0.18, -0.06, 0.06, 0.18]) barrel(ox * cs, cs * 0.1, cs * 0.46); break;
+    case 'long': barrel(0, cs * 0.2, cs * 0.8); break;
+    case 'light': barrel(0, cs * 0.17, cs * 0.42); break;
+    case 'siege': barrel(0, cs * 0.38, cs * 0.5); break;
+    case 'rapid': barrel(0, cs * 0.15, cs * 0.52); break;
+    default: barrel(0, cs * 0.26, cs * 0.5);
+  }
+  const r = cs * 0.1;
+  ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 1.4;
+  switch (A.k) {
+    case 'fire': poly(ctx, [[0, -r * 1.3], [r * 0.9, r * 0.8], [0, r * 0.3], [-r * 0.9, r * 0.8]]); ctx.fill(); break;
+    case 'frag': for (const [x, y] of [[0, 0], [-1, -1], [1, -1], [-1, 1], [1, 1]]) { ctx.beginPath(); ctx.arc(x * r * 0.8, y * r * 0.8, r * 0.28, 0, TAU); ctx.fill(); } break;
+    case 'smoke': for (const [x, y, rr0] of [[-0.7, 0.3, 0.55], [0.1, -0.35, 0.7], [0.8, 0.35, 0.5]]) { ctx.beginPath(); ctx.arc(x * r, y * r, rr0 * r, 0, TAU); ctx.fill(); } break;
+    case 'emp': poly(ctx, [[r * 0.3, -r * 1.3], [-r * 0.8, r * 0.15], [-r * 0.05, r * 0.15], [-r * 0.3, r * 1.3], [r * 0.8, -r * 0.2], [r * 0.05, -r * 0.2]]); ctx.fill(); break;
+    case 'siege': ctx.beginPath(); ctx.arc(0, 0, r * 1.1, 0, TAU); ctx.stroke(); ctx.beginPath(); ctx.arc(0, 0, r * 0.4, 0, TAU); ctx.fill(); break;
+    case 'rapid': for (let i = 0; i < 2; i++) { ctx.beginPath(); ctx.moveTo(-r * 0.9, r * (0.7 - i * 1.1)); ctx.lineTo(0, r * (-0.2 - i * 1.1)); ctx.lineTo(r * 0.9, r * (0.7 - i * 1.1)); ctx.stroke(); } break;
+    case 'mine': ctx.beginPath(); ctx.arc(0, 0, r * 0.8, 0, TAU); ctx.fill(); for (let i = 0; i < 8; i++) { const a = i * TAU / 8; ctx.beginPath(); ctx.moveTo(Math.cos(a) * r * 0.8, Math.sin(a) * r * 0.8); ctx.lineTo(Math.cos(a) * r * 1.3, Math.sin(a) * r * 1.3); ctx.stroke(); } break;
+  }
+  ctx.restore();
+}
+
+/** defesas pontuais da v2.0 (giram para a ameaça) */
+function drawPD20(ctx, P, A, cs, o) {
+  const ang = (o && o.ang) || 0, rec = ((o && o.recoil) || 0) * 2, col = A.col;
+  ctx.save(); ctx.rotate(ang);
+  switch (A.k) {
+    case 'ciws':
+      ctx.fillStyle = '#4b5360'; ctx.strokeStyle = '#1b2027'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.arc(0, 0, cs * 0.34, 0, TAU); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#d6dbe1'; ctx.fillRect(-cs * 0.11, -cs * 0.5 + rec, cs * 0.22, cs * 0.5);
+      ctx.strokeStyle = '#6b7480'; ctx.lineWidth = 1; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(i * cs * 0.04, -cs * 0.5 + rec); ctx.lineTo(i * cs * 0.04, -cs * 0.05); ctx.stroke(); }
+      ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, cs * 0.34, 0, TAU); ctx.stroke();
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(0, cs * 0.06, cs * 0.08, 0, TAU); ctx.fill();
+      break;
+    case 'pdlong':
+      ctx.fillStyle = '#c9d1da'; ctx.fillRect(-cs * 0.035, -cs * 0.78 + rec, cs * 0.07, cs * 0.78);
+      ctx.fillStyle = '#59636f'; ctx.strokeStyle = '#242a31'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(0, 0, cs * 0.25, 0, TAU); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(0, cs * 0.04, cs * 0.1, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#e9eef3'; ctx.fillRect(-cs * 0.06, -cs * 0.78 + rec, cs * 0.12, cs * 0.05);
+      break;
+    case 'laserd':
+      ctx.fillStyle = '#2a2f38'; ctx.strokeStyle = '#0f1216'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.arc(0, 0, cs * 0.3, 0, TAU); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#1b1e24'; ctx.fillRect(-cs * 0.09, -cs * 0.46, cs * 0.18, cs * 0.46);
+      ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.strokeRect(-cs * 0.09, -cs * 0.46, cs * 0.18, cs * 0.46);
+      { const g = ctx.createRadialGradient(0, 0, 0, 0, 0, cs * 0.2); g.addColorStop(0, '#ffffff'); g.addColorStop(0.4, col); g.addColorStop(1, 'rgba(255,60,60,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, cs * 0.2, 0, TAU); ctx.fill(); }
+      break;
+  }
+  ctx.restore();
+}
+
+/** glifos das peças de painel (sensores, avarias, apoio, contramedidas): desenhados em unidades de célula (u) com a cor da peça já ativa */
+const GLYPH20 = {
+  radarL(c, u, t) {
+    c.beginPath(); c.arc(0, u * 0.14, u * 0.3, Math.PI * 1.15, Math.PI * 1.85); c.stroke();
+    c.beginPath(); c.arc(0, u * 0.14, u * 0.18, Math.PI * 1.15, Math.PI * 1.85); c.stroke();
+    c.save(); c.translate(0, u * 0.14); c.rotate(t * 2.4); c.beginPath(); c.moveTo(0, 0); c.lineTo(u * 0.3, 0); c.stroke(); c.restore();
+    c.beginPath(); c.moveTo(0, u * 0.14); c.lineTo(0, u * 0.3); c.stroke();
+  },
+  mast(c, u) {
+    c.beginPath(); c.moveTo(0, u * 0.3); c.lineTo(0, -u * 0.26); c.moveTo(-u * 0.2, -u * 0.04); c.lineTo(u * 0.2, -u * 0.04); c.stroke();
+    c.beginPath(); c.arc(0, -u * 0.26, u * 0.06, 0, TAU); c.fill();
+    c.beginPath(); c.moveTo(u * 0.02, -u * 0.2); c.lineTo(u * 0.22, -u * 0.14); c.lineTo(u * 0.02, -u * 0.08); c.closePath(); c.fill();
+  },
+  towed(c, u, t) {
+    c.beginPath(); c.moveTo(-u * 0.3, -u * 0.12);
+    for (let i = 1; i <= 6; i++) c.lineTo(-u * 0.3 + i * u * 0.07, -u * 0.12 + Math.sin(i + t * 3) * u * 0.07 + i * u * 0.035);
+    c.stroke();
+    for (let i = 0; i < 3; i++) { c.beginPath(); c.arc(u * (0.04 + i * 0.1), u * 0.1 + i * u * 0.03, u * 0.045, 0, TAU); c.fill(); }
+  },
+  sonarC(c, u) {
+    c.beginPath(); c.arc(0, 0, u * 0.05, 0, TAU); c.fill();
+    for (const r of [0.14, 0.25]) { c.beginPath(); c.arc(0, 0, u * r, -0.9, 0.9); c.stroke(); c.beginPath(); c.arc(0, 0, u * r, Math.PI - 0.9, Math.PI + 0.9); c.stroke(); }
+  },
+  irst(c, u) {
+    c.beginPath(); c.moveTo(-u * 0.3, 0); c.quadraticCurveTo(0, -u * 0.3, u * 0.3, 0); c.quadraticCurveTo(0, u * 0.3, -u * 0.3, 0); c.stroke();
+    c.beginPath(); c.moveTo(0, -u * 0.15); c.quadraticCurveTo(u * 0.12, u * 0.02, 0, u * 0.13); c.quadraticCurveTo(-u * 0.12, u * 0.02, 0, -u * 0.15); c.fill();
+  },
+  aesa(c, u) {
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) c.fillRect(i * u * 0.16 - u * 0.04, j * u * 0.16 - u * 0.04, u * 0.08, u * 0.08);
+    c.beginPath(); c.arc(0, 0, u * 0.3, -0.5, 0.5); c.stroke();
+  },
+  threat(c, u) {
+    c.beginPath(); c.moveTo(0, -u * 0.3); c.lineTo(u * 0.3, u * 0.24); c.lineTo(-u * 0.3, u * 0.24); c.closePath(); c.stroke();
+    c.beginPath(); c.moveTo(0, -u * 0.1); c.lineTo(0, u * 0.08); c.stroke(); c.beginPath(); c.arc(0, u * 0.16, u * 0.03, 0, TAU); c.fill();
+  },
+  minedet(c, u) {
+    c.beginPath(); c.arc(-u * 0.06, -u * 0.06, u * 0.13, 0, TAU); c.fill();
+    for (let i = 0; i < 8; i++) { const a = i * TAU / 8; c.beginPath(); c.moveTo(-u * 0.06 + Math.cos(a) * u * 0.13, -u * 0.06 + Math.sin(a) * u * 0.13); c.lineTo(-u * 0.06 + Math.cos(a) * u * 0.2, -u * 0.06 + Math.sin(a) * u * 0.2); c.stroke(); }
+    c.beginPath(); c.arc(u * 0.1, u * 0.1, u * 0.12, 0, TAU); c.stroke(); c.beginPath(); c.moveTo(u * 0.19, u * 0.19); c.lineTo(u * 0.3, u * 0.3); c.stroke();
+  },
+  laser(c, u) {
+    c.beginPath(); c.arc(0, 0, u * 0.17, 0, TAU); c.stroke();
+    c.beginPath(); c.moveTo(-u * 0.3, 0); c.lineTo(-u * 0.08, 0); c.moveTo(u * 0.08, 0); c.lineTo(u * 0.3, 0); c.moveTo(0, -u * 0.3); c.lineTo(0, -u * 0.08); c.moveTo(0, u * 0.08); c.lineTo(0, u * 0.3); c.stroke();
+    c.beginPath(); c.arc(0, 0, u * 0.03, 0, TAU); c.fill();
+  },
+  stealthC(c, u) {
+    c.beginPath(); for (let i = 0; i < 6; i++) c.lineTo(Math.cos(i * TAU / 6) * u * 0.26, Math.sin(i * TAU / 6) * u * 0.26); c.closePath(); c.stroke();
+    c.beginPath(); c.arc(0, 0, u * 0.08, 0, TAU); c.fill();
+  },
+  pumpC(c, u) { c.beginPath(); c.moveTo(0, -u * 0.26); c.quadraticCurveTo(u * 0.22, u * 0.04, 0, u * 0.24); c.quadraticCurveTo(-u * 0.22, u * 0.04, 0, -u * 0.26); c.fill(); },
+  pumpH(c, u) {
+    c.beginPath(); c.moveTo(0, -u * 0.28); c.quadraticCurveTo(u * 0.2, u * 0.02, 0, u * 0.22); c.quadraticCurveTo(-u * 0.2, u * 0.02, 0, -u * 0.28); c.fill();
+    for (const s of [-1, 1]) { c.beginPath(); c.moveTo(s * u * 0.24, u * 0.1); c.lineTo(s * u * 0.3, -u * 0.04); c.lineTo(s * u * 0.36, u * 0.1); c.stroke(); }
+  },
+  repairH(c, u) {
+    c.fillRect(-u * 0.08, -u * 0.28, u * 0.16, u * 0.56); c.fillRect(-u * 0.28, -u * 0.08, u * 0.56, u * 0.16);
+    c.strokeStyle = '#fff'; c.lineWidth = 1; c.strokeRect(-u * 0.08, -u * 0.28, u * 0.16, u * 0.56);
+  },
+  repairC(c, u, t) {
+    c.beginPath(); c.arc(0, 0, u * 0.28, 0, TAU); c.stroke();
+    c.fillRect(-u * 0.05, -u * 0.17, u * 0.1, u * 0.34); c.fillRect(-u * 0.17, -u * 0.05, u * 0.34, u * 0.1);
+    for (let i = 0; i < 4; i++) { const a = t * 2 + i * TAU / 4; c.beginPath(); c.arc(Math.cos(a) * u * 0.28, Math.sin(a) * u * 0.28, u * 0.04, 0, TAU); c.fill(); }
+  },
+  extH(c, u) {
+    c.fillRect(-u * 0.08, -u * 0.12, u * 0.2, u * 0.4); c.fillRect(-u * 0.04, -u * 0.2, u * 0.12, u * 0.09);
+    c.beginPath(); c.moveTo(u * 0.1, -u * 0.17); c.lineTo(u * 0.2, -u * 0.17); c.stroke();
+    c.strokeStyle = '#bfe9ff'; for (const a of [-0.5, 0, 0.5]) { c.beginPath(); c.moveTo(-u * 0.06, -u * 0.2); c.lineTo(-u * 0.06 - Math.cos(a) * u * 0.22, -u * 0.2 - Math.sin(a) * u * 0.22); c.stroke(); }
+  },
+  seal(c, u) {
+    c.strokeRect(-u * 0.24, -u * 0.24, u * 0.48, u * 0.48);
+    c.beginPath(); c.moveTo(-u * 0.14, -u * 0.14); c.lineTo(u * 0.14, u * 0.14); c.moveTo(u * 0.14, -u * 0.14); c.lineTo(-u * 0.14, u * 0.14); c.stroke();
+    for (const [x, y] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { c.beginPath(); c.arc(x * u * 0.24, y * u * 0.24, u * 0.035, 0, TAU); c.fill(); }
+  },
+  buoy(c, u) {
+    c.lineWidth = u * 0.12; c.beginPath(); c.arc(0, 0, u * 0.22, 0, TAU); c.stroke();
+    c.strokeStyle = '#fff'; for (let i = 0; i < 4; i++) { c.beginPath(); c.arc(0, 0, u * 0.22, i * TAU / 4 - 0.25, i * TAU / 4 + 0.25); c.stroke(); }
+  },
+  suppress(c, u) {
+    c.beginPath(); c.moveTo(0, -u * 0.3); c.lineTo(u * 0.24, -u * 0.18); c.lineTo(u * 0.22, u * 0.1); c.quadraticCurveTo(0, u * 0.36, -u * 0.22, u * 0.1); c.lineTo(-u * 0.24, -u * 0.18); c.closePath(); c.stroke();
+    for (let i = 0; i < 6; i++) { const a = i * TAU / 6; c.beginPath(); c.moveTo(Math.cos(a) * u * 0.04, -u * 0.02 + Math.sin(a) * u * 0.04); c.lineTo(Math.cos(a) * u * 0.14, -u * 0.02 + Math.sin(a) * u * 0.14); c.stroke(); }
+  },
+  cutter(c, u) {
+    c.beginPath(); c.moveTo(-u * 0.22, -u * 0.26); c.lineTo(u * 0.2, u * 0.12); c.moveTo(u * 0.22, -u * 0.26); c.lineTo(-u * 0.2, u * 0.12); c.stroke();
+    for (const s of [-1, 1]) { c.beginPath(); c.arc(s * u * 0.14, u * 0.22, u * 0.08, 0, TAU); c.stroke(); }
+  },
+  insul(c, u) {
+    c.beginPath(); c.arc(0, 0, u * 0.3, 0, TAU); c.stroke();
+    c.beginPath(); c.moveTo(u * 0.04, -u * 0.22); c.lineTo(-u * 0.1, u * 0.02); c.lineTo(u * 0.0, u * 0.02); c.lineTo(-u * 0.04, u * 0.22); c.lineTo(u * 0.1, -u * 0.04); c.lineTo(u * 0.0, -u * 0.04); c.closePath(); c.fill();
+  },
+  damp(c, u) {
+    c.beginPath(); c.moveTo(-u * 0.3, 0); c.lineTo(-u * 0.24, 0);
+    for (let i = 0; i < 6; i++) c.lineTo(-u * 0.2 + i * u * 0.08, i % 2 ? u * 0.15 : -u * 0.15);
+    c.lineTo(u * 0.24, 0); c.lineTo(u * 0.3, 0); c.stroke();
+    c.beginPath(); c.moveTo(-u * 0.3, -u * 0.2); c.lineTo(-u * 0.3, u * 0.2); c.moveTo(u * 0.3, -u * 0.2); c.lineTo(u * 0.3, u * 0.2); c.stroke();
+  },
+  shieldQ(c, u) {
+    c.beginPath(); c.arc(0, 0, u * 0.3, 0, TAU); c.stroke();
+    for (let i = 0; i < 2; i++) { c.beginPath(); c.moveTo(-u * 0.12 + i * u * 0.12, -u * 0.14); c.lineTo(i * u * 0.12, 0); c.lineTo(-u * 0.12 + i * u * 0.12, u * 0.14); c.stroke(); }
+  },
+  shieldH(c, u) {
+    c.beginPath(); c.arc(0, 0, u * 0.31, 0, TAU); c.stroke(); c.beginPath(); c.arc(0, 0, u * 0.2, 0, TAU); c.stroke();
+    c.fillRect(-u * 0.04, -u * 0.12, u * 0.08, u * 0.24); c.fillRect(-u * 0.12, -u * 0.04, u * 0.24, u * 0.08);
+  },
+  boost(c, u) {
+    for (let i = 0; i < 3; i++) { const b = u * (0.2 - i * 0.15); c.beginPath(); c.moveTo(-u * 0.2, b); c.lineTo(0, b - u * 0.16); c.lineTo(u * 0.2, b); c.stroke(); }
+  },
+  cic(c, u, t) {
+    c.strokeRect(-u * 0.29, -u * 0.24, u * 0.58, u * 0.38);
+    c.beginPath(); c.moveTo(0, u * 0.14); c.lineTo(0, u * 0.26); c.moveTo(-u * 0.14, u * 0.26); c.lineTo(u * 0.14, u * 0.26); c.stroke();
+    c.save(); c.translate(0, -u * 0.05); c.rotate(t * 2.5); c.beginPath(); c.moveTo(0, 0); c.lineTo(u * 0.16, 0); c.stroke(); c.restore();
+    c.beginPath(); c.arc(u * 0.12, -u * 0.1, u * 0.025, 0, TAU); c.fill();
+  },
+  dronebay(c, u) {
+    c.beginPath(); c.moveTo(-u * 0.18, -u * 0.18); c.lineTo(u * 0.18, u * 0.18); c.moveTo(u * 0.18, -u * 0.18); c.lineTo(-u * 0.18, u * 0.18); c.stroke();
+    for (const [x, y] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { c.beginPath(); c.arc(x * u * 0.22, y * u * 0.22, u * 0.07, 0, TAU); c.stroke(); }
+    c.beginPath(); c.arc(0, 0, u * 0.06, 0, TAU); c.fill();
+  },
+  ballcomp(c, u) {
+    c.beginPath(); c.moveTo(-u * 0.3, u * 0.22); c.quadraticCurveTo(0, -u * 0.46, u * 0.26, u * 0.2); c.stroke();
+    c.beginPath(); c.arc(u * 0.26, u * 0.2, u * 0.07, 0, TAU); c.stroke(); c.beginPath(); c.arc(u * 0.26, u * 0.2, u * 0.025, 0, TAU); c.fill();
+    c.beginPath(); c.arc(-u * 0.3, u * 0.22, u * 0.04, 0, TAU); c.fill();
+  },
+  belt(c, u) {
+    for (let i = -1; i <= 1; i++) {
+      c.fillRect(i * u * 0.18 - u * 0.05, -u * 0.1, u * 0.1, u * 0.3);
+      c.beginPath(); c.moveTo(i * u * 0.18 - u * 0.05, -u * 0.1); c.lineTo(i * u * 0.18, -u * 0.24); c.lineTo(i * u * 0.18 + u * 0.05, -u * 0.1); c.closePath(); c.fill();
+    }
+    c.beginPath(); c.moveTo(-u * 0.3, u * 0.26); c.lineTo(u * 0.3, u * 0.26); c.stroke();
+  },
+  fcsA(c, u) {
+    c.beginPath(); c.arc(0, 0, u * 0.18, 0, TAU); c.stroke();
+    c.beginPath(); c.moveTo(-u * 0.3, 0); c.lineTo(-u * 0.1, 0); c.moveTo(u * 0.1, 0); c.lineTo(u * 0.3, 0); c.moveTo(0, -u * 0.3); c.lineTo(0, -u * 0.1); c.moveTo(0, u * 0.1); c.lineTo(0, u * 0.3); c.stroke();
+    for (const [x, y] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { c.beginPath(); c.arc(x * u * 0.26, y * u * 0.26, u * 0.03, 0, TAU); c.fill(); }
+  },
+  gyro(c, u, t) {
+    c.beginPath(); c.arc(0, 0, u * 0.27, 0, TAU); c.stroke();
+    c.save(); c.rotate(t * 3); c.beginPath(); c.ellipse(0, 0, u * 0.22, u * 0.08, 0, 0, TAU); c.stroke(); c.restore();
+    c.beginPath(); c.arc(0, 0, u * 0.05, 0, TAU); c.fill();
+  },
+  chaff(c, u) {
+    c.lineWidth = 1.3;
+    for (const [x, y, a] of [[-0.2, -0.18, 0.6], [0.1, -0.24, -0.5], [0.24, -0.04, 0.9], [-0.06, 0.02, -0.8], [-0.24, 0.2, 0.3], [0.12, 0.2, -0.3], [0.26, 0.27, 0.7]]) {
+      c.beginPath(); c.moveTo((x - Math.cos(a) * 0.08) * u, (y - Math.sin(a) * 0.08) * u); c.lineTo((x + Math.cos(a) * 0.08) * u, (y + Math.sin(a) * 0.08) * u); c.stroke();
+    }
+  },
+  decoy(c, u) {
+    c.beginPath(); c.arc(0, 0, u * 0.06, 0, TAU); c.fill();
+    for (const r of [0.14, 0.22, 0.3]) { c.beginPath(); c.arc(0, 0, u * r, 0, TAU); c.globalAlpha = 1 - r * 2; c.stroke(); } c.globalAlpha = 1;
+  },
+  jamL(c, u) {
+    c.beginPath(); c.moveTo(0, u * 0.3); c.lineTo(0, -u * 0.08); c.stroke(); c.beginPath(); c.arc(0, -u * 0.12, u * 0.04, 0, TAU); c.fill();
+    for (const r of [0.14, 0.24]) { c.beginPath(); c.arc(0, -u * 0.12, u * r, -2.5, -0.64); c.stroke(); c.beginPath(); c.arc(0, -u * 0.12, u * r, 0.64, 2.5); c.stroke(); }
+  },
+  tjam(c, u) {
+    c.beginPath(); c.moveTo(-u * 0.3, 0); c.lineTo(u * 0.1, 0); c.lineWidth = u * 0.14; c.stroke(); c.lineWidth = Math.max(1.2, u * 0.06);
+    c.beginPath(); c.moveTo(u * 0.1, -u * 0.07); c.lineTo(u * 0.3, 0); c.lineTo(u * 0.1, u * 0.07); c.closePath(); c.fill();
+    c.strokeStyle = '#ff5d5d'; c.beginPath(); c.moveTo(-u * 0.12, -u * 0.22); c.lineTo(u * 0.12, u * 0.22); c.moveTo(u * 0.12, -u * 0.22); c.lineTo(-u * 0.12, u * 0.22); c.stroke();
+  },
+  smoker(c, u) {
+    c.beginPath(); c.arc(-u * 0.14, u * 0.06, u * 0.13, 0, TAU); c.arc(0, -u * 0.08, u * 0.17, 0, TAU); c.arc(u * 0.15, u * 0.06, u * 0.12, 0, TAU); c.fill();
+    c.fillRect(-u * 0.27, u * 0.08, u * 0.54, u * 0.1);
+  },
+  silencer(c, u) {
+    c.beginPath(); c.moveTo(-u * 0.28, -u * 0.08); c.lineTo(-u * 0.14, -u * 0.08); c.lineTo(u * 0.04, -u * 0.24); c.lineTo(u * 0.04, u * 0.24); c.lineTo(-u * 0.14, u * 0.08); c.lineTo(-u * 0.28, u * 0.08); c.closePath(); c.fill();
+    c.beginPath(); c.arc(u * 0.04, 0, u * 0.16, -0.8, 0.8); c.stroke();
+    c.strokeStyle = '#ff5d5d'; c.beginPath(); c.moveTo(-u * 0.3, u * 0.28); c.lineTo(u * 0.3, -u * 0.28); c.stroke();
+  },
+  irsupp(c, u) {
+    c.beginPath(); c.moveTo(0, -u * 0.28); c.quadraticCurveTo(u * 0.26, u * 0.04, 0, u * 0.26); c.quadraticCurveTo(-u * 0.26, u * 0.04, 0, -u * 0.28); c.fill();
+    c.strokeStyle = '#7fd4ff'; c.lineWidth = u * 0.08; c.beginPath(); c.moveTo(-u * 0.3, u * 0.28); c.lineTo(u * 0.3, -u * 0.28); c.stroke();
+  },
+  degauss(c, u) {
+    c.lineWidth = u * 0.13; c.beginPath(); c.arc(0, -u * 0.02, u * 0.2, Math.PI, 0); c.lineTo(u * 0.2, u * 0.2); c.moveTo(-u * 0.2, -u * 0.02); c.lineTo(-u * 0.2, u * 0.2); c.stroke();
+    c.fillStyle = '#e9eef3'; c.fillRect(-u * 0.265, u * 0.14, u * 0.13, u * 0.12); c.fillRect(u * 0.135, u * 0.14, u * 0.13, u * 0.12);
+  },
+  djam(c, u) {
+    c.beginPath(); c.moveTo(-u * 0.14, -u * 0.14); c.lineTo(u * 0.14, u * 0.14); c.moveTo(u * 0.14, -u * 0.14); c.lineTo(-u * 0.14, u * 0.14); c.stroke();
+    for (const [x, y] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { c.beginPath(); c.arc(x * u * 0.18, y * u * 0.18, u * 0.06, 0, TAU); c.stroke(); }
+    c.strokeStyle = '#ff5d5d'; c.beginPath(); c.arc(0, 0, u * 0.3, 0, TAU); c.moveTo(-u * 0.21, u * 0.21); c.lineTo(u * 0.21, -u * 0.21); c.stroke();
+  },
+};
+
+/** desenho das peças da v2.0 (morteiros, defesas pontuais e peças de painel). Devolve true se desenhou. */
+function drawV20(ctx, code, cs, o) {
+  const P = PARTS[code];
+  if (!P || !P.art || P.layer !== 'top') return false;
+  const A = P.art, t = (o && o.time) || 0;
+  if (P.kind === 'mortar') { drawMortar20(ctx, P, A, cs, o); return true; }
+  if (P.kind === 'pd') { drawPD20(ctx, P, A, cs, o); return true; }
+  const G = GLYPH20[A.g];
+  if (!G) return false;
+  rr(ctx, -cs * 0.4, -cs * 0.4, cs * 0.8, cs * 0.8, cs * 0.1);
+  ctx.fillStyle = A.bg || '#1d252d'; ctx.fill(); ctx.strokeStyle = A.col; ctx.lineWidth = 1.6; ctx.stroke();
+  ctx.save(); ctx.strokeStyle = A.col; ctx.fillStyle = A.col; ctx.lineWidth = Math.max(1.2, cs * 0.06); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  G(ctx, cs, t);
+  ctx.restore();
+  return true;
 }

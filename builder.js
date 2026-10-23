@@ -15,11 +15,13 @@ const Builder = (() => {
 
   /** qual aleta colocar em (x,y)? null = posição inválida */
   function finFor(d, part, x, y) {
-    if (part === 'v') return hullAt(d, x, y - 1) ? 'v' : null;
+    const P = PARTS[part];
+    if (P.fin !== 'lateral') return hullAt(d, x + P.attach[0], y + P.attach[1]) ? part : null;      // traseira (hull acima) e proa (hull abaixo)
+    const L = P.side === 1 ? part : P.mirror, R = P.side === 1 ? P.mirror : part;                 // laterais: esquerda e direita da mesma família
     const l = hullAt(d, x - 1, y), r = hullAt(d, x + 1, y);
-    if (l && r) return x < (GRID_W - 1) / 2 ? '<' : '>';
-    if (r) return '<';
-    if (l) return '>';
+    if (l && r) return x < (GRID_W - 1) / 2 ? L : R;
+    if (r) return L;
+    if (l) return R;
     return null;
   }
 
@@ -37,7 +39,8 @@ const Builder = (() => {
     }
     if (t.layer === 'fin') {
       if (h && !isFin(h)) return 'Aletas ficam em células vazias, encostadas no casco';
-      return finFor(d, t.part, x, y) ? null : (t.part === 'v' ? 'Precisa ficar logo atrás de uma peça de casco' : 'Precisa ficar ao lado de uma peça de casco');
+      const fk = PARTS[t.part].fin;
+      return finFor(d, t.part, x, y) ? null : (fk === 'rear' ? 'Precisa ficar logo atrás de uma peça de casco' : fk === 'bow' ? 'Precisa ficar logo à frente de uma peça de casco' : 'Precisa ficar ao lado de uma peça de casco');
     }
     return null;
   }
@@ -61,9 +64,7 @@ const Builder = (() => {
       const h = d.hull[y][x];
       if (d.top[y][x] && (!isHull(h) || isBridge(h))) d.top[y][x] = '';
       if (d.crew[y][x] && !isHull(h)) d.crew[y][x] = '';
-      if (h === '<' && !hullAt(d, x + 1, y)) d.hull[y][x] = '';
-      if (h === '>' && !hullAt(d, x - 1, y)) d.hull[y][x] = '';
-      if (h === 'v' && !hullAt(d, x, y - 1)) d.hull[y][x] = '';
+      if (isFin(h) && !hullAt(d, x + PARTS[h].attach[0], y + PARTS[h].attach[1])) d.hull[y][x] = '';
     }
   }
 
@@ -241,7 +242,7 @@ const Builder = (() => {
         const mx = GRID_W - 1 - x;
         let h = design.hull[y][x];
         if (isBridge(h)) h = '#';
-        design.hull[y][mx] = h === '<' ? '>' : h === '>' ? '<' : h;
+        design.hull[y][mx] = (h && PARTS[h] && PARTS[h].mirror) || h;
         design.top[y][mx] = design.top[y][x];
         design.crew[y][mx] = design.crew[y][x];
       }

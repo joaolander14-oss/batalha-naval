@@ -64,8 +64,10 @@ const SFX = {
 /* vizinhança 4 e chances de incêndio */
 const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const FIRE_CH = { shell: 0.16, heavy: 0.08, bullet: 0.03, flame: 0.02, rail: 0.05, mortar: 0.28, torp: 0.3, missile: 0.34, mine: 0.3, depth: 0.1, melee: 0.05, cook: 0.35, bomb: 0.2, ballistic: 0.45, nuke: 0.8, inc: 0.9, emp: 0.05, mag: 0.3 };
-const FLAMMABLE = { engine: 1.8, torp: 1.6, missile: 1.6, mortar: 1.5, cannon: 1.3, depth: 1.4, mine: 1.3, mg: 1.1, repair: 0.8, shield: 0.6, ballistic: 1.7, flare: 1.4, plate: 0.6 };
-const AMMO = new Set(['torp', 'missile', 'mortar', 'depth', 'mine', 'ballistic', 'flare']);
+const FLAMMABLE = { engine: 1.8, torp: 1.6, missile: 1.6, mortar: 1.5, cannon: 1.3, depth: 1.4, mine: 1.3, mg: 1.1, repair: 0.8, shield: 0.6, ballistic: 1.7, flare: 1.4, plate: 0.6, chaff: 1.3, decoy: 1.2, smoker: 1.2, booster: 1.4 };
+const AMMO = new Set(['torp', 'missile', 'mortar', 'depth', 'mine', 'ballistic', 'flare', 'chaff', 'decoy', 'smoker']);
+/** peças que não funcionam com o submarino mergulhado */
+const SURFACE_ONLY = new Set(['cannon', 'mortar', 'mg', 'missile', 'ballistic', 'flare', 'chaff', 'smoker', 'depth', 'pd', 'djammer']);
 /** projéteis de tiro direto que param nas ilhas */
 const LAND_BLOCK = new Set(['shell', 'bullet', 'heavy', 'flame', 'rail', 'torp', 'missile']);
 /** célula protegida contra fogo (casco corta-fogo ou placa corta-fogo por cima) */
@@ -122,7 +124,7 @@ class Ship {
       if (isHull(c.base) && (!bow || c.gy < bow.gy)) bow = c;
       if (c.top) {
         const P = PARTS[c.top.type];
-        if (P.kind === 'cannon' || P.kind === 'mortar') maxR = Math.max(maxR, P.range);
+        if (P.kind === 'cannon' || (P.kind === 'mortar' && !P.util)) maxR = Math.max(maxR, P.range * this.stats.rangeMul);
         if (P.kind === 'mg') { mgR = Math.max(mgR, P.range); if (P.bullet === 'flame') flame = true; }
         if (P.kind === 'missile') missR = Math.max(missR, P.range * 0.9);
       }
@@ -135,11 +137,12 @@ class Ship {
     this.shield = Math.min(this.shield, this.shieldMax);
     // sensores e furtividade (os mesmos campos que detects() lê)
     this.vision = this.stats.vision * this.visMul * this.envMul * this.sensorMul; this.sonar = this.stats.sonarR * this.sensorMul; this.pingR = this.stats.pingR * this.sensorMul;
+    this.irst = this.stats.irstR * this.sensorMul; this.aesa = this.stats.aesa;
     this.sig = this.stats.sig; this.cover = this.stats.cover;
     this.isSub = this.stats.sub; this.maxBattery = this.stats.battery; this.battery = Math.min(this.battery, this.maxBattery);
     this.crewCells = this.list.filter(c => c.crew);
     this.meleeCells = this.list.filter(c => c.top && PARTS[c.top.type].kind === 'melee');
-    this.floodCap = this.initialHull * 3 + 6 * this.stats.floats;
+    this.floodCap = this.initialHull * 3 + 6 * this.stats.floats + this.stats.floodBonus;
   }
 
   get rl() { return this.reloadMul * this.stats.loadMul / (1 + 0.2 * (this.fx.g || 0)); }
@@ -177,12 +180,23 @@ class Ship {
 
   hullHp() { let s = 0; for (const c of this.list) if (isHull(c.base)) s += c.hp; return s; }
 
+  /** há míssil ou torpedo guiado inimigo a menos de r deste navio? */
+  guidedNear(r) {
+    for (const sh of Battle.shots) {
+      if (sh.dead || sh.team === this.team || !(sh.kind === 'missile' || (sh.kind === 'torp' && sh.turn > 0))) continue;
+      if (Math.hypot(sh.x - this.x, sh.y - this.y) < r) return true;
+    }
+    return false;
+  }
+
   /** blast = dano de explosão (o casco reativo reduz); soak = redução fixa da blindagem */
   hitCell(c, dmg, blast = false, owner = null, src = null) {
     if (this.sinking || c.dead) return;
     c.flash = 0.12;
     if (this.remote) return;                      // navios remotos: só o dono aplica o dano
     if (owner) this.lastAttacker = owner;
+    if (src !== 'fire') this.lastHitT = Battle.time;                          // gerador de fumaça dispara quando levamos tiro
+    if (blast && this.stats.dampers) dmg *= this.stats.blastMul;              // dissipadores de choque
     if (this.shield > 0 && src !== 'fire') {
       const a = Math.min(this.shield, dmg);
       this.shield -= a; dmg -= a; this.shieldHit = 3; this.shieldFlash = 0.4;
@@ -246,19 +260,20 @@ class Ship {
   /** munição de uma peça destruída pode explodir e ferir as vizinhas */
   cookOff(c) {
     if (!c.top || !AMMO.has(PARTS[c.top.type].kind)) return;
-    if (Math.random() > (c.fire > 0 ? 0.7 : 0.3)) return;
+    const sup = Math.min(2, this.stats.suppress);                           // supressores de explosão
+    if (Math.random() > (c.fire > 0 ? 0.7 : 0.3) * (sup ? [1, 0.4, 0.2][sup] : 1)) return;
     const [wx, wy] = this.cellWorld(c);
     Battle.explosion(wx, wy, 0.9);
     for (const o of [...this.list]) {
       if (o === c || o.dead) continue;
-      if (Math.hypot(o.gx - c.gx, o.gy - c.gy) <= 1.6) this.hitCell(o, 4, true, c.fireBy || null, 'cook');
+      if (Math.hypot(o.gx - c.gx, o.gy - c.gy) <= 1.6) this.hitCell(o, sup ? 1.6 : 4, true, c.fireBy || null, 'cook');
     }
   }
 
   /** atordoa a tripulação (choque elétrico); fuzileiros resistem */
   stun(sec) {
     if (this.remote) return;
-    const k = (this.fx.f || 0) > 0 ? 0.5 : 1;
+    const k = ((this.fx.f || 0) > 0 ? 0.5 : 1) * Math.pow(0.5, Math.min(2, this.stats.insul));      // fuzileiros e isolantes de choque
     for (const c of this.crewCells) c.stun = Math.max(c.stun, sec * k);
   }
 
@@ -267,11 +282,11 @@ class Ship {
     this.crewT -= dt;
     if (this.crewT <= 0) { this.crewT = 0.4; this.updateCrew(); }
     for (const c of this.crewCells) if (c.stun > 0) c.stun -= dt;
-    if (this.hooked > 0) this.hooked -= dt;
+    if (this.hooked > 0) this.hooked -= dt * (1 + 3 * Math.min(2, this.stats.cutters));              // cortadores de cabo soltam o gancho
     // alagamento
-    const patch = 0.04 + 0.5 * (this.fx.r || 0) + 0.12 * this.stats.repairs;
+    const patch = 0.04 + 0.5 * (this.fx.r || 0) + 0.12 * this.stats.repairs + this.stats.sealPatch;
     if (this.leak > 0) { this.leak = Math.max(0, this.leak - patch * dt); this.water += this.leak * dt; }
-    if (this.water > 0) this.water = Math.max(0, this.water - Math.min(3, this.stats.pumps) * 1.4 * dt);
+    if (this.water > 0) this.water = Math.max(0, this.water - this.stats.pumpRate * dt);
     this.wet = clamp(this.water / this.floodCap, 0, 1);
     if (this.wet >= 1) { if (this === Battle.player) UI.banner('ALAGAMENTO!', 'O navio encheu de água'); this.sink(); return; }
     if (this.isSub && this.wet > 0.7) this.diveCmd = false;               // submarino alagado não segura profundidade
@@ -298,9 +313,10 @@ class Ship {
       cnt[c.crew] = (cnt[c.crew] || 0) + 1;
       fx[c.crew] += cnt[c.crew] === 1 ? 1 : 0.5;
     }
+    if (this.stats.crewMul > 1) for (const k in fx) fx[k] *= this.stats.crewMul;                         // Centro de Combate
     this.fx = fx;
     const sm = 1 + 0.25 * Math.min(1.5, fx.s);
-    if (sm !== this.sensorMul) { this.sensorMul = sm; this.sonar = this.stats.sonarR * sm; this.pingR = this.stats.pingR * sm; if (!this.isSub) this.vision = this.stats.vision * this.visMul * this.envMul * sm; }
+    if (sm !== this.sensorMul) { this.sensorMul = sm; this.sonar = this.stats.sonarR * sm; this.pingR = this.stats.pingR * sm; this.irst = this.stats.irstR * sm; if (!this.isSub) this.vision = this.stats.vision * this.visMul * this.envMul * sm; }
   }
 
   updateFires(dt) {
@@ -343,7 +359,7 @@ class Ship {
     for (const c of [...this.cells.values()]) if (isHull(c.base) && !seen.has(c.gx + ',' + c.gy)) this.removeCell(c);
     for (const c of [...this.cells.values()]) {
       if (!isFin(c.base)) continue;
-      const a = c.base === '<' ? [1, 0] : c.base === '>' ? [-1, 0] : [0, -1];
+      const a = PARTS[c.base].attach;
       const n = this.cells.get((c.gx + a[0]) + ',' + (c.gy + a[1]));
       if (!n || !isHull(n.base)) this.removeCell(c);
     }
@@ -401,6 +417,7 @@ class Ship {
     this.flame += ((th > 0 && st.engines && this.depth < 0.5 ? th : 0) - this.flame) * Math.min(1, dt * 6);
     this.speed = Math.hypot(this.vx, this.vy);
     this.quiet = st.quiet * (this.speed < 25 ? 0.5 : 1);                   // parado ou com motor elétrico: o sonar passivo ouve menos
+    this.sig = st.sig * (Battle.smokes.length && Battle.inSmoke(this.x, this.y) ? SMOKE_SIG : 1);   // dentro de uma nuvem de fumaça só é visto de perto
 
     if (this.revealT > 0) this.revealT -= dt;
     if (this.pingT > 0) this.pingT -= dt;
@@ -559,7 +576,7 @@ class Ship {
     if (t.cd > 0) t.cd -= dt;
     if (t.recoil > 0) t.recoil = Math.max(0, t.recoil - dt * 5);
     const [wx, wy] = this.cellWorld(c);
-    if (this.depth > 0.3 && (P.kind === 'cannon' || P.kind === 'mortar' || P.kind === 'mg' || P.kind === 'missile' || P.kind === 'ballistic' || P.kind === 'flare' || P.kind === 'depth' || P.kind === 'pd')) return;   // submerso: só torpedos, minas e sensores
+    if (this.depth > 0.3 && SURFACE_ONLY.has(P.kind)) return;   // submerso: só torpedos, minas e sensores
     switch (P.kind) {
       case 'cannon': {
         const [ax, ay] = this.aimPoint(wx, wy, P.speed);
@@ -572,7 +589,7 @@ class Ship {
             const off = (i - (P.shots - 1) / 2) * CS * 0.28, a = t.ang + rand(-P.spread, P.spread), [bx, by] = dirOf(a);
             const mx = wx + dx * CS * 0.7 + px * off, my = wy + dy * CS * 0.7 + py * off;
             Battle.shoot({ kind: P.pierce ? 'rail' : 'shell', x: mx, y: my, vx: bx * P.speed + this.vx * 0.5, vy: by * P.speed + this.vy * 0.5,
-              life: P.range / P.speed, dmg: P.dmg, team: this.team, owner: this.id, pierce: P.pierce || 0, big: P.dmg > 6 });
+              life: P.range * this.stats.rangeMul / P.speed, dmg: P.dmg, team: this.team, owner: this.id, pierce: P.pierce || 0, big: P.dmg > 6 });
             Battle.addP({ t: 'flash', x: mx, y: my, life: 0.09, s: 7 + P.dmg, g: 20 });
           }
           SFX.play('cannon', wx, wy); this.doReveal(900, 1.5);
@@ -583,14 +600,18 @@ class Ship {
         const [ax, ay] = this.aimPoint(wx, wy, P.speed);
         const want = Math.atan2(ax - wx, -(ay - wy)), dist = Math.hypot(ax - wx, ay - wy);
         t.ang = turnToward(t.ang, want, P.turn * this.stats.turnMul * dt);
+        const R = P.range * this.stats.rangeMul;
         if (inp.fireMain && t.cd <= 0 && Math.abs(angDiff(want, t.ang)) < 0.2) {
-          if (this.ai && dist > P.range) break;                    // a IA só dispara ao alcance
+          if (this.ai && (dist > R || P.util)) break;              // a IA só dispara ao alcance e não usa fumaça nem minas
           t.cd = P.reload * this.rl; t.recoil = 1;
-          const d = clamp(dist, P.minRange, P.range);
+          const d = clamp(dist, P.minRange, R);
           const ux = dist > 1 ? (ax - wx) / dist : Math.sin(t.ang), uy = dist > 1 ? (ay - wy) / dist : -Math.cos(t.ang);
-          const sc = rand(0, P.scatter * this.stats.scatterMul), sa = rand(0, TAU);
-          const tx = wx + ux * d + Math.cos(sa) * sc, ty = wy + uy * d + Math.sin(sa) * sc, T = d / P.speed;
-          Battle.shoot({ kind: 'mortar', x: wx, y: wy, x0: wx, y0: wy, tx, ty, T, life: T, dmg: P.dmg, splash: P.splash, team: this.team, owner: this.id });
+          const n = P.shots || 1;
+          for (let i = 0; i < n; i++) {                            // salvas: várias granadas, cada uma com a sua dispersão e um pequeno atraso
+            const sc = rand(0, P.scatter * this.stats.scatterMul * (n > 1 ? 1.6 : 1)), sa = rand(0, TAU);
+            const tx = wx + ux * d + Math.cos(sa) * sc, ty = wy + uy * d + Math.sin(sa) * sc, T = d / P.speed + i * 0.13;
+            Battle.shoot({ kind: 'mortar', x: wx, y: wy, x0: wx, y0: wy, tx, ty, T, life: T, dmg: P.dmg, splash: P.splash, wh: P.wh || '', team: this.team, owner: this.id });
+          }
           for (let i = 0; i < 4; i++)
             Battle.addP({ t: 'smoke', x: wx + ux * CS * 0.5, y: wy + uy * CS * 0.5, vx: ux * rand(10, 50) + rand(-10, 10), vy: uy * rand(10, 50) + rand(-10, 10), life: rand(0.6, 1.1), s: 5, g: 10, a: 0.7 });
           SFX.play('cannon', wx, wy); this.doReveal(900, 1.5);
@@ -693,19 +714,38 @@ class Ship {
           SFX.play('boom', wx, wy); this.doReveal(1500, 3);
         }
         break;
-      case 'flare':
+      case 'flare': case 'chaff': case 'decoy':                // iscas: flares (térmicos), chaff (radar) e iscas sonoras (torpedos guiados)
         if (t.cd <= 0) {
+          const kind = P.kind;
+          const hunts = sh => kind === 'flare' ? (sh.kind === 'missile' && sh.lock === 'heat')
+            : kind === 'chaff' ? (sh.kind === 'missile' && (sh.lock === 'radar' || !sh.lock))
+            : (sh.kind === 'torp' && sh.turn > 0);
           let danger = null;
           for (const sh of Battle.shots) {
-            if (sh.dead || sh.kind !== 'missile' || sh.lock !== 'heat' || sh.team === this.team) continue;
+            if (sh.dead || sh.team === this.team || !hunts(sh)) continue;
             if (sh.target === this || Math.hypot(sh.x - this.x, sh.y - this.y) < this.radius + 120) { if (Math.hypot(sh.x - wx, sh.y - wy) < P.range) { danger = sh; break; } }
           }
           if (danger) {
             t.cd = P.reload * this.rl; t.recoil = 1;
-            for (let i = 0; i < P.salvo; i++) Battle.addFlare(wx, wy, this.team, P.life, this.vx, this.vy, danger.ang + (i % 2 ? 1 : -1) * (Math.PI / 2 + rand(-0.35, 0.35)));   // iscas saem de lado, para longe da rota do míssil
+            const type = kind === 'flare' ? 'ir' : kind === 'chaff' ? 'chaff' : 'sonic';
+            for (let i = 0; i < P.salvo; i++) Battle.addFlare(wx, wy, this.team, P.life, this.vx, this.vy, danger.ang + (i % 2 ? 1 : -1) * (Math.PI / 2 + rand(-0.35, 0.35)), type);   // iscas saem de lado, para longe da rota
             SFX.play('hit', wx, wy);
           }
         }
+        break;
+      case 'smoker':                                           // fumaça automática: ao levar tiro ou com míssil/torpedo guiado em cima
+        if (t.cd <= 0 && (Battle.time - (this.lastHitT || -99) < 1.2 || this.guidedNear(450))) {
+          t.cd = P.reload; t.recoil = 1;
+          Battle.shoot({ kind: 'mortar', x: this.x, y: this.y, x0: this.x, y0: this.y, tx: this.x, ty: this.y, T: 0.05, life: 0.05, dmg: 0, splash: 0, wh: 'smoke', team: this.team, owner: this.id });
+        }
+        break;
+      case 'tjammer':                                          // interferência sonora: torpedos guiados perdem o rumo
+        for (const sh of Battle.shots)
+          if (sh.kind === 'torp' && sh.turn > 0 && sh.team !== this.team && !sh.dead && Math.hypot(sh.x - wx, sh.y - wy) < P.range) sh.jam = 1.5;
+        break;
+      case 'djammer':                                          // interferência de rádio: derruba drones inimigos por perto
+        for (const dr of Battle.drones)
+          if (dr.team !== this.team && !dr.dead && !dr.remote && Math.hypot(dr.x - wx, dr.y - wy) < P.range && Math.random() < dt * 0.9) Battle.killDrone(dr, 'pd');
         break;
       case 'pd': {
         let best = null, bd = P.range;
@@ -724,9 +764,10 @@ class Ship {
           t.ang = turnToward(t.ang, want, 9 * dt);
           if (t.cd <= 0 && Math.abs(angDiff(want, t.ang)) < 0.2) {
             t.cd = P.reload; t.recoil = 1;
-            Battle.addP({ t: 'tracer', x: wx, y: wy, x2: best.x, y2: best.y, life: 0.09 });
-            if (best.drone) { if (Math.random() < 0.7) Battle.killDrone(best, 'pd'); }
-            else if (Math.random() < (best.speed > 450 ? 0.4 : 0.8)) { best.dead = true; Battle.explosion(best.x, best.y, 0.35); Battle.onShotGone(best); }
+            Battle.addP({ t: 'tracer', x: wx, y: wy, x2: best.x, y2: best.y, life: P.laser ? 0.14 : 0.09, laser: !!P.laser });
+            const acc = P.acc || 1;
+            if (best.drone) { if (Math.random() < Math.min(0.97, 0.7 * acc)) Battle.killDrone(best, 'pd'); }
+            else if (Math.random() < Math.min(0.97, (best.speed > 450 && !P.laser ? 0.4 : 0.8) * acc)) { best.dead = true; Battle.explosion(best.x, best.y, 0.35); Battle.onShotGone(best); }
           }
         } else t.ang = turnToward(t.ang, this.ang, 6 * dt);
         break;
@@ -746,7 +787,7 @@ class Ship {
       }
       case 'sprinkler':
         t.acc += dt;
-        if (t.acc >= 0.7) {
+        if (t.acc >= (P.every || 0.7)) {
           t.acc = 0;
           for (const o of this.list) {
             if (o.dead || !(o.fire > 0) || Math.hypot(o.gx - c.gx, o.gy - c.gy) > P.range) continue;
@@ -778,12 +819,13 @@ class Ship {
             const r = o.hp / o.maxHp;
             if (r < br) { br = r; best = o; }
           }
+          const amt = P.amt || 1;
           if (best) {
-            best.hp = Math.min(best.maxHp, best.hp + 1);
+            best.hp = Math.min(best.maxHp, best.hp + amt);
             const [bx, by] = this.cellWorld(best);
             Battle.addP({ t: 'plus', x: bx, y: by, vy: -26, life: 0.9, s: 6 });
           } else {
-            for (const o of this.list) if (!o.dead && o.top && o.top.hp < o.top.maxHp && Math.hypot(o.gx - c.gx, o.gy - c.gy) <= P.radius) { o.top.hp = Math.min(o.top.maxHp, o.top.hp + 1); break; }
+            for (const o of this.list) if (!o.dead && o.top && o.top.hp < o.top.maxHp && Math.hypot(o.gx - c.gx, o.gy - c.gy) <= P.radius) { o.top.hp = Math.min(o.top.maxHp, o.top.hp + amt); break; }
           }
         }
         break;
@@ -897,7 +939,7 @@ const Battle = {
   ships: [], shots: [], parts: [], player: null, cam: { x: 0, y: 0 }, shake: 0, time: 0,
   keys: new Set(), mouse: { x: 0, y: 0, left: false, right: false },
   wave: 1, state: 'idle', running: false, last: 0, clearTimer: 0, overTimer: 0,
-  runCoins: 0, kills: 0, design: null, hud: {}, mode: 'campaign', drones: [], flares: [], map: null, islands: [], env: null, envMul: 1, objMode: '', nukeT: 0, nukePos: null, zoneState: null, objState: null, strikePt: null, respawnQ: [], mission: null, wxT: 0, bolt: 0, drops: [], noFog: false, friendlyFire: false, hostPaused: false, teamLast: {}, skirmish: null, localIds: new Set(), zoom: 1, shotSeq: 0, myDesign: null, cfg: null, deadNotice: false, contacts: new Map(), obs: [], aiAware: true, aiLast: { x: 0, y: 0 }, stealthT: 0,
+  runCoins: 0, kills: 0, design: null, hud: {}, mode: 'campaign', drones: [], flares: [], smokes: [], map: null, islands: [], env: null, envMul: 1, objMode: '', nukeT: 0, nukePos: null, zoneState: null, objState: null, strikePt: null, respawnQ: [], mission: null, wxT: 0, bolt: 0, drops: [], noFog: false, friendlyFire: false, hostPaused: false, teamLast: {}, skirmish: null, localIds: new Set(), zoom: 1, shotSeq: 0, myDesign: null, cfg: null, deadNotice: false, contacts: new Map(), obs: [], aiAware: true, aiLast: { x: 0, y: 0 }, stealthT: 0,
 
   init() {
     this.canvas = document.getElementById('game'); this.ctx = this.canvas.getContext('2d');
@@ -970,7 +1012,7 @@ const Battle = {
     SFX.init();
     this.mode = 'campaign'; document.getElementById('screen-battle').classList.remove('online');
     setArena(3600); this.noFog = false; this.friendlyFire = false; this.hostPaused = false;
-    this.objMode = (skirmish && skirmish.mode) || ''; this.objState = null; this.zoneState = null; this.respawnQ = []; this.mission = null; this.strikePt = null; this.flares = [];
+    this.objMode = (skirmish && skirmish.mode) || ''; this.objState = null; this.zoneState = null; this.respawnQ = []; this.mission = null; this.strikePt = null; this.flares = []; this.smokes = [];
     document.getElementById('screen-battle').classList.toggle('objmode', !!this.objMode);
     this.setMap(this.offlineMap(this.objMode));
     this.design = design; this.myDesign = design; this.wave = wave; this.runCoins = 0; this.kills = 0;
@@ -1014,7 +1056,7 @@ const Battle = {
     SFX.init();
     this.mode = 'online'; document.getElementById('screen-battle').classList.add('online');
     setArena(cfg.settings.arena || 3600); this.hostPaused = false; this.applyRules(cfg.settings);
-    this.objMode = (cfg.settings.mode === 'zone' || cfg.settings.mode === 'convoy') ? cfg.settings.mode : ''; this.objState = null; this.zoneState = null; this.respawnQ = []; this.mission = null; this.strikePt = null; this.flares = [];
+    this.objMode = (cfg.settings.mode === 'zone' || cfg.settings.mode === 'convoy') ? cfg.settings.mode : ''; this.objState = null; this.zoneState = null; this.respawnQ = []; this.mission = null; this.strikePt = null; this.flares = []; this.smokes = [];
     document.getElementById('screen-battle').classList.toggle('objmode', !!this.objMode);
     this.setMap(genMap(cfg.map.seed, cfg.settings.arena || 3600, cfg.map.env, cfg.map.level, this.objMode));
     this.cfg = cfg; this.myDesign = cfg.me.design; this.shotSeq = 0; this.deadNotice = false;
@@ -1483,6 +1525,7 @@ const Battle = {
     this.meleeStep(dt);
     this.updateDrones(dt);
     this.updateFlares(dt);
+    this.updateSmokes(dt);
     if (this.nukeT > 0) this.nukeT = Math.max(0, this.nukeT - dt * 0.8);
     this.islandStep(dt);
     this.mapFx(dt);
@@ -1513,7 +1556,7 @@ const Battle = {
       if (p.kind === 'mortar') {                          // voa em arco por cima de tudo
         const k = clamp(1 - p.life / p.T, 0, 1);
         p.x = p.x0 + (p.tx - p.x0) * k; p.y = p.y0 + (p.ty - p.y0) * k;
-        if (p.life <= 0) { p.dead = true; this.blast(p.tx, p.ty, p.splash, p.dmg, p.team, p.owner, 'mortar'); this.splash(p.tx, p.ty, 1.2); }
+        if (p.life <= 0) { p.dead = true; this.landMortar(p); }
         continue;
       }
       if (p.kind === 'ballistic') {                       // míssil balístico: arco altíssimo, nada o intercepta
@@ -1545,7 +1588,8 @@ const Battle = {
             if (this.sameTeam(s, p.team, p.owner) || s.sinking || (s.remote && s.seenT <= 0)) continue;
             if (Math.hypot(s.x - p.x, s.y - p.y) > s.radius + 30) continue;
             let touch = false;
-            for (const c of s.list) { if (c.dead) continue; const [wx, wy] = s.cellWorld(c); if (Math.hypot(wx - p.x, wy - p.y) < 24) { touch = true; break; } }
+            const touchR = s.stats.degauss ? 8 : 24;                                   // cinto desmagnetizador: a mina só explode se encostar mesmo
+            for (const c of s.list) { if (c.dead) continue; const [wx, wy] = s.cellWorld(c); if (Math.hypot(wx - p.x, wy - p.y) < touchR) { touch = true; break; } }
             if (!touch) continue;
             p.dead = true; this.blast(p.x, p.y, p.splash, p.dmg, p.team, p.owner, 'mine');
             if (this.mode === 'online' && p.id && !s.remote) Online.send({ t: 'hit', id: p.id, x: p.x, y: p.y });
@@ -1666,7 +1710,7 @@ const Battle = {
     if (d.dead) return;
     d.dead = true;
     const h = d.hangar;
-    if (h && h.drones && !h.drones.some(o => !o.dead)) { h.drone = null; h.dcd = why === 'land' ? 4 : d.P.relaunch; }     // todos fora: o hangar recarrega
+    if (h && h.drones && !h.drones.some(o => !o.dead)) { h.drone = null; h.dcd = why === 'land' ? 4 : d.P.relaunch * (d.owner && d.owner.stats ? d.owner.stats.dockMul : 1); }     // todos fora: o hangar recarrega (oficinas de drones aceleram)
     if (why !== 'land') this.explosion(d.x, d.y, why === 'boom' ? 0.8 : d.kind === 'swarm' ? 0.35 : 0.5);
   },
   /** drone inimigo detectado mais próximo (para metralhadoras e drones escolta) */
@@ -2003,6 +2047,53 @@ const Battle = {
     this.impact(p.x, p.y); s.hitCell(c, p.dmg, false, p.owner, p.kind); return true;
   },
 
+  /** queda de uma granada de morteiro: comum, incendiária, eletromagnética, de fragmentação, de fumaça ou lança-minas */
+  landMortar(p) {
+    const wh = p.wh || '';
+    if (wh === 'smoke') { this.addSmoke(p.tx, p.ty); this.splash(p.tx, p.ty, 0.8); return; }
+    if (wh === 'mmine') {                                                        // vira uma mina parada (criada em todas as telas, cada dono aplica o dano no seu navio)
+      this.splash(p.tx, p.ty, 1);
+      this.shots.push({ kind: 'mine', x: p.tx, y: p.ty, vx: 0, vy: 0, life: 40, arm: 2.5, dmg: p.dmg, splash: p.splash, team: p.team, owner: p.owner });
+      return;
+    }
+    if (wh === 'cluster') {                                                      // abre no ar: 5 submunições numa área de 62 de raio
+      this.explosion(p.tx, p.ty, 0.5);
+      for (let i = 0; i < 5; i++) {
+        const a = rand(0, TAU), r = Math.sqrt(Math.random()) * 62, T = 0.18 + i * 0.07;
+        this.shots.push({ kind: 'mortar', x: p.tx, y: p.ty, x0: p.tx, y0: p.ty, tx: p.tx + Math.cos(a) * r, ty: p.ty + Math.sin(a) * r, T, life: T, dmg: p.dmg, splash: p.splash, team: p.team, owner: p.owner });
+      }
+      return;
+    }
+    this.blast(p.tx, p.ty, p.splash, p.dmg, p.team, p.owner, wh === 'inc' ? 'inc' : wh === 'emp' ? 'emp' : 'mortar');
+    this.splash(p.tx, p.ty, 1.2);
+  },
+
+  /* ------------------------------------------------------------------ fumaça */
+  addSmoke(x, y) { this.smokes.push({ x, y, r: SMOKE_R, life: SMOKE_LIFE, max: SMOKE_LIFE }); if (this.smokes.length > 24) this.smokes.shift(); },
+  updateSmokes(dt) {
+    if (!this.smokes.length) return;
+    for (const s of this.smokes) s.life -= dt;
+    this.smokes = this.smokes.filter(s => s.life > 0);
+  },
+  inSmoke(x, y) {
+    for (const s of this.smokes) { const dx = x - s.x, dy = y - s.y; if (dx * dx + dy * dy < s.r * s.r) return true; }
+    return false;
+  },
+  drawSmokes() {
+    const ctx = this.ctx;
+    for (const s of this.smokes) {
+      if (Math.abs(s.x - this.cam.x) > this.W / this.zoom / 2 + s.r || Math.abs(s.y - this.cam.y) > this.H / this.zoom / 2 + s.r) continue;
+      const k = Math.min(1, s.life / 3, (s.max - s.life) / 1.2 + 0.15);                                   // surge e some devagar
+      for (let i = 0; i < 7; i++) {                                                                       // vários rolos de fumaça que giram devagar
+        const a = i * 0.9 + this.time * 0.12 * (i % 2 ? 1 : -1), d = s.r * (i === 0 ? 0 : 0.5), rr0 = s.r * (i === 0 ? 0.75 : 0.5);
+        const x = s.x + Math.cos(a) * d, y = s.y + Math.sin(a) * d;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, rr0);
+        g.addColorStop(0, `rgba(205,212,220,${(0.62 * k).toFixed(3)})`); g.addColorStop(1, 'rgba(205,212,220,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, rr0, 0, TAU); ctx.fill();
+      }
+    }
+  },
+
   /** queda de um míssil balístico: ogiva comum, nuclear, incendiária, EMP ou MIRV (6 submunições) */
   landBallistic(p) {
     const wh = p.wh || '';
@@ -2026,7 +2117,8 @@ const Battle = {
       return true;
     }
     if (wh === 'cluster') { this.burstCluster(p, p.x, p.y, 36); return true; }
-    this.blast(p.x, p.y, p.splash, p.dmg, p.team, p.owner, this.warKind(p), null, p.kind === 'torp' ? true : undefined);
+    const dm = (wh === 'mag' && s.stats.degauss) ? p.dmg * 0.4 : p.dmg;                    // cinto desmagnetizador: o torpedo magnético perde a força
+    this.blast(p.x, p.y, p.splash, dm, p.team, p.owner, this.warKind(p), null, p.kind === 'torp' ? true : undefined);
     return true;
   },
   warKind(p) { return p.wh === 'nuke' ? 'nuke' : p.wh === 'inc' ? 'inc' : p.wh === 'emp' ? 'emp' : (p.wh === 'mag' && p.kind === 'torp') ? 'mag' : p.kind; },
@@ -2042,7 +2134,7 @@ const Battle = {
   /** torpedo magnético: algum casco inimigo a menos de 38? */
   proxHit(p) {
     for (const s of this.ships) {
-      if (this.sameTeam(s, p.team, p.owner) || s.sinking || (s.remote && s.seenT <= 0)) continue;
+      if (this.sameTeam(s, p.team, p.owner) || s.sinking || (s.remote && s.seenT <= 0) || s.stats.degauss) continue;      // desmagnetizados não acionam torpedos magnéticos
       if (Math.hypot(s.x - p.x, s.y - p.y) > s.radius + 40) continue;
       for (const c of s.list) { if (c.dead) continue; const [wx, wy] = s.cellWorld(c); if (Math.hypot(wx - p.x, wy - p.y) < 38) return true; }
     }
@@ -2089,15 +2181,16 @@ const Battle = {
     const ownerLive = p.ownerShip && !p.remoteOwned && !p.ownerShip.dead && !p.ownerShip.sinking;
     const gpsOk = lock === 'gps' && (p.gx || p.gy);
     if (!tg && !p.jam && !gpsOk && !(lock === 'tele' && ownerLive)) tg = p.target = lock === 'acoustic' ? this.pickAcousticTarget({ team: p.team, x: p.x, y: p.y }) : this.nearestEnemy({ team: p.team }, p.x, p.y, lock === 'heat' ? 700 : 900);
-    if (lock === 'heat' && !(tg && tg.flare) && this.flares.length) {            // flares enganam o buscador de calor
+    const lure = p.kind === 'torp' ? 'sonic' : lock === 'heat' ? 'ir' : lock === 'radar' ? 'chaff' : '';     // qual isca engana este buscador: flare (calor), chaff (radar) ou isca sonora (torpedo)
+    if (lure && !(tg && tg.flare) && this.flares.length) {
       for (const f of this.flares) {
-        if (f.team === p.team || f.dead || f.life <= 0) continue;
+        if (f.team === p.team || f.dead || f.life <= 0 || f.type !== lure) continue;
         const dx = f.x - p.x, dy = f.y - p.y;
         if (dx * dx + dy * dy > 300 * 300 || Math.abs(angDiff(Math.atan2(dx, -dy), p.ang)) > 1.3) continue;
         const seen = p.seenFlares || (p.seenFlares = new Set());
         if (seen.has(f)) continue;
         seen.add(f);
-        if (Math.random() < 0.3) { tg = p.target = f; break; }
+        if (Math.random() < (lure === 'sonic' ? 0.4 : 0.3)) { tg = p.target = f; break; }
       }
     }
     if (p.jam > 0) { p.jam -= dt; p.ang += rand(-1, 1) * 4 * dt; }                 // bloqueado: sai voando sem rumo
@@ -2112,16 +2205,17 @@ const Battle = {
     } else if (tg) {
       let tx = tg.x, ty = tg.y;
       if (lock === 'heat' && !tg.flare && tg.heatPoint) [tx, ty] = tg.heatPoint();      // mira no motor mais quente
-      p.ang = turnToward(p.ang, Math.atan2(tx - p.x, -(ty - p.y)), p.turn * dt);
+      const tk = (lock === 'heat' && !tg.flare && tg.stats && tg.stats.irsupp) ? 1 - 0.3 * Math.min(2, tg.stats.irsupp) : 1;      // supressor térmico: o buscador curva pior
+      p.ang = turnToward(p.ang, Math.atan2(tx - p.x, -(ty - p.y)), p.turn * tk * dt);
     }
     const [dx, dy] = dirOf(p.ang);
     p.vx = dx * p.speed; p.vy = dy * p.speed;
   },
 
   /* ------------------------------------------------------------------ flares, ilhas e clima */
-  addFlare(x, y, team, life, vx, vy, ang) {
+  addFlare(x, y, team, life, vx, vy, ang, type = 'ir') {
     const a = ang === undefined ? rand(0, TAU) : ang, sp = rand(140, 240), [dx, dy] = dirOf(a);      // dirOf: 0 = para cima
-    this.flares.push({ flare: true, x, y, vx: dx * sp + (vx || 0) * 0.3, vy: dy * sp + (vy || 0) * 0.3, team, life, dead: false });
+    this.flares.push({ flare: true, type, x, y, vx: dx * sp + (vx || 0) * 0.3, vy: dy * sp + (vy || 0) * 0.3, team, life, dead: false });
   },
   updateFlares(dt) {
     for (const f of this.flares) {
@@ -2327,7 +2421,8 @@ const Battle = {
     if (this.env && this.env.dark) { ctx.fillStyle = `rgba(0,6,22,${this.env.dark})`; ctx.fillRect(this.cam.x - this.W / this.zoom, this.cam.y - this.H / this.zoom, 2 * this.W / this.zoom, 2 * this.H / this.zoom); }
     this.drawParticles(0);
     const meT = this.player.team;
-    const shown = p => p.team === meT || (p.kind === 'mine' ? this.nearObserver(p.x, p.y, 150) : this.inVision(p.x, p.y));   // minas inimigas só aparecem de perto
+    const md = this.player.stats.mineDetR, pl0 = this.player;
+    const shown = p => p.team === meT || (p.kind === 'mine' ? (this.nearObserver(p.x, p.y, 150) || (md && Math.hypot(p.x - pl0.x, p.y - pl0.y) < md)) : this.inVision(p.x, p.y));   // minas inimigas só aparecem de perto (ou dentro do detector de minas)
     for (const p of this.shots) if (p.kind === 'mortar' && (shown(p) || this.inVision(p.tx, p.ty))) this.drawMortarMarker(p);
     for (const p of this.shots) if (p.kind === 'ballistic') this.drawBallMarker(p);
     this.drawStrike();
@@ -2337,11 +2432,13 @@ const Battle = {
     for (const [sh, mode] of this.contacts) if (mode === 'full') sh.drawShield(ctx);
     for (const d of this.drones) if (!d.dead && (d.team === this.player.team || (this.inVision(d.x, d.y) && (!d.remote || (d.owner && d.owner.seenT > 0))))) this.drawDrone(d);
     for (const p of this.shots) if (p.kind !== 'torp' && shown(p)) this.drawShot(p);
+    this.drawSmokes();
     ctx.globalCompositeOperation = 'lighter';
     for (const f of this.flares) if (this.inVision(f.x, f.y) || f.team === meT) {
       const k = clamp(f.life / 2, 0, 1), g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, 16);
-      g.addColorStop(0, `rgba(255,250,210,${k.toFixed(2)})`); g.addColorStop(0.4, `rgba(255,170,60,${(k * 0.7).toFixed(2)})`); g.addColorStop(1, 'rgba(255,90,0,0)');
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(f.x, f.y, 16, 0, TAU); ctx.fill();
+      const cs = f.type === 'chaff' ? ['235,245,255', '170,205,240', '90,140,220'] : f.type === 'sonic' ? ['220,255,255', '90,225,255', '20,120,200'] : ['255,250,210', '255,170,60', '255,90,0'];      // flare quente, chaff prateado, isca sonora ciano
+      g.addColorStop(0, `rgba(${cs[0]},${k.toFixed(2)})`); g.addColorStop(0.4, `rgba(${cs[1]},${(k * 0.7).toFixed(2)})`); g.addColorStop(1, `rgba(${cs[2]},0)`);
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(f.x, f.y, f.type === 'chaff' ? 24 : 16, 0, TAU); ctx.fill();
     }
     ctx.globalCompositeOperation = 'source-over';
     this.drawParticles(1);
@@ -2369,6 +2466,7 @@ const Battle = {
       if (a > 0.01) { ctx.fillStyle = `rgba(255,252,235,${(a * 0.95).toFixed(3)})`; ctx.fillRect(0, 0, W, H); }
     }
     this.drawBlips();
+    this.drawThreats();
     this.drawIndicators();
     this.drawCrosshair();
     this.drawMinimap();
@@ -2623,7 +2721,7 @@ const Battle = {
           ctx.fillStyle = `rgba(80,230,140,${k.toFixed(3)})`;
           ctx.fillRect(p.x - 1.5, p.y - p.s, 3, p.s * 2); ctx.fillRect(p.x - p.s, p.y - 1.5, p.s * 2, 3); break;
         case 'tracer':
-          ctx.strokeStyle = `rgba(160,245,255,${k.toFixed(3)})`; ctx.lineWidth = 1.5;
+          ctx.strokeStyle = p.laser ? `rgba(255,90,90,${k.toFixed(3)})` : `rgba(160,245,255,${k.toFixed(3)})`; ctx.lineWidth = p.laser ? 2.6 : 1.5;
           ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x2, p.y2); ctx.stroke(); break;
         case 'text':
           ctx.globalAlpha = Math.min(1, k * 2); ctx.fillStyle = p.col; ctx.font = `bold ${p.s}px "Segoe UI", sans-serif`;
@@ -2680,6 +2778,28 @@ const Battle = {
       ctx.beginPath(); ctx.arc(s.x, s.y, s.radius + 14, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
       ctx.font = '600 11px "Segoe UI", sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,200,170,.9)';
       ctx.fillText(s.label || 'contato', s.x, s.y - s.radius - 20);
+    }
+    ctx.restore();
+  },
+
+  /** Detector de Ameaças: marca (por cima da névoa) mísseis, torpedos e granadas inimigos que ainda não estão à vista */
+  drawThreats() {
+    const pl = this.player, R = pl.stats.threatR;
+    if (!R || pl.dead || pl.sinking) return;
+    const ctx = this.ctx;
+    ctx.save(); ctx.translate(this.W / 2, this.H / 2); ctx.scale(this.zoom, this.zoom); ctx.translate(-this.cam.x, -this.cam.y);
+    const pulse = 0.55 + 0.35 * Math.sin(this.time * 12);
+    for (const p of this.shots) {
+      if (p.dead || p.team === pl.team || !(p.kind === 'missile' || p.kind === 'torp' || p.kind === 'mortar')) continue;
+      const hx = p.kind === 'mortar' ? p.tx : p.x, hy = p.kind === 'mortar' ? p.ty : p.y;          // granada: marca o ponto de queda
+      if (Math.hypot(hx - pl.x, hy - pl.y) > R || this.inVision(hx, hy)) continue;
+      ctx.strokeStyle = `rgba(255,80,80,${pulse.toFixed(3)})`; ctx.fillStyle = `rgba(255,80,80,${(pulse * 0.25).toFixed(3)})`; ctx.lineWidth = 2.5;
+      if (p.kind === 'mortar') { ctx.beginPath(); ctx.arc(hx, hy, Math.max(10, p.splash), 0, TAU); ctx.fill(); ctx.stroke(); }
+      else {
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.atan2(p.vx, -p.vy));
+        poly(ctx, [[0, -10], [7, 8], [-7, 8]]); ctx.fill(); ctx.stroke(); ctx.restore();
+        ctx.beginPath(); ctx.arc(p.x, p.y, 16 + 4 * Math.sin(this.time * 12), 0, TAU); ctx.stroke();
+      }
     }
     ctx.restore();
   },
