@@ -1,4 +1,4 @@
-# ⚓ Batalha Naval — v2.0
+# ⚓ Batalha Naval — v2.1
 
 Monte seu navio **peça por peça** numa grade (casco, armas, motores, aletas, sensores…) e lute contra ondas de inimigos
 ou contra outros jogadores **online**. Funciona no computador e no **celular** (instalável como app).
@@ -35,6 +35,10 @@ ou contra outros jogadores **online**. Funciona no computador e no **celular** (
   - **Mais placas de convés:** Pesada, Cerâmica, Titânio, Corta-fogo e Isolante Térmica (esconde o calor dos motores vizinhos).
   - **Ilhas** (terra invencível: navios batem e tiros diretos param; morteiros, balísticos e drones passam por cima) e **7 ambientes**: mar aberto, arquipélago tropical, ártico, tempestade, nevoeiro, noite e costa vulcânica (alguns reduzem a visão).
   - **Modos de partida** (online e contra bots): **Controle de Zona** (segure 3 zonas para pontuar) e **Comboio** (a equipe A escolta o cargueiro até o destino; a B tenta afundá-lo; ele renasce no último ponto de controle até acabarem as vidas).
+- **Ilhas destrutíveis e novos modos (v2.1):**
+  - Só **mísseis balísticos** destroem ilhas (cada ilha tem vida; vão aparecendo crateras e ela desaba). O **nuclear** vaporiza ilhas inteiras. Tiros, torpedos, morteiros e mísseis de cruzeiro continuam parando na ilha sem machucá-la.
+  - Modos contra bots, todos personalizáveis na janela 🤖 Bots (duração, reaparecimento, tamanho do mapa, névoa, fogo amigo e opções de cada modo): **Ataque ao Porto** (destrua o porto inimigo; torres de defesa e reparo em casa), **Capturar a Bandeira**, **Defesa do Porto** (ondas de inimigos) e **Corrida de Suprimentos** (caixas pelo mar), além de Controle de Zona (1 a 5 zonas) e Comboio.
+- **Campo de testes (v2.1):** botão 🎯 no estaleiro. Mar aberto com **alvos parados** (que não atiram): escolha o modelo, a distância e a posição no painel (tecla `T`), veja o **dano total e o DPS** das suas armas e teste contramedidas contra alvos com escudo, defesa pontual, chaff, furtividade ou submarino. Ignora o orçamento.
 - **v2.0 — mais morteiros, aletas, sensores, avarias, apoio e contramedidas:**
   - **Morteiros:** leve, duplo, de rajada, de fogo rápido, de longo alcance (1400), de cerco, incendiário, de fragmentação, eletromagnético, de **fumaça** (esconde quem está na nuvem) e **lança-minas**.
   - **Aletas:** larga, blindada, hidrofólio, quilha, furtiva, hidroplano de mergulho e a jato (laterais, com esquerda/direita automáticas); lemes duplo, blindado, vetorial e skeg (traseiras); e as novas **aletas de proa**: proa hidrodinâmica, domo de sonar e defletor.
@@ -42,7 +46,7 @@ ou contra outros jogadores **online**. Funciona no computador e no **celular** (
   - **Avarias:** bombas compacta e de alta vazão, reparo pesado, central de reparos, extintor de alta capacidade, selante de rombos, câmara de flutuação, supressor de explosão, cortador de cabos, isolante de choque e dissipador de choque.
   - **Apoio:** escudos rápido e pesado, compressor de motores, centro de combate, oficina de drones, computador balístico, esteira de munição, diretor de tiro e estabilizador giroscópico.
   - **Contramedidas:** defesa pontual rápida (CIWS), longa e a laser, **chaff** (contra radar), **isca antitorpedo**, bloqueador de longo alcance, interferidor de torpedos, **gerador de fumaça** automático, silenciador acústico, supressor térmico, cinto desmagnetizador e interferidor de drones.
-- **Mais balísticos e torpedos (v1.9.1/v1.9.2):** mísseis balísticos **nuclear** (260 de raio: incendeia, atordoa, derruba escudos e cega a tela; o anfitrião pode proibir), **MIRV** (6 ogivas), **incendiário**, **EMP**, **hipersônico** e **perfurante**; torpedos **mini** (2 por salva), **acústico**, **magnético** e **cacheiro**. Armas nucleares existem só como balísticos. O jogo também ficou mais leve (névoa em baixa resolução, navios e ilhas em cache).
+- **Mais balísticos e torpedos (v1.9.1/v1.9.2):** mísseis balísticos **nuclear** (v2.1: 380 de raio com cogumelo atômico; incendeia, atordoa, derruba escudos, arremessa os navios e cega a tela; o anfitrião pode proibir), **MIRV** (6 ogivas), **incendiário**, **EMP**, **hipersônico** e **perfurante**; torpedos **mini** (2 por salva), **acústico**, **magnético** e **cacheiro**. Armas nucleares existem só como balísticos. O jogo também ficou mais leve (névoa em baixa resolução, navios e ilhas em cache).
 - **Bots configuráveis (v1.6):** dificuldade, quantidade, modelos permitidos, *escaramuça* offline e **bots nas salas online** (o anfitrião adiciona; rodam no navegador dele).
 - **Zoom (v1.6):** ⚙ Opções (35%–160%) ou roda do mouse / `−` `+` na batalha.
 - **Visão e furtividade (v1.5):**

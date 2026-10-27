@@ -68,6 +68,31 @@ const FLAMMABLE = { engine: 1.8, torp: 1.6, missile: 1.6, mortar: 1.5, cannon: 1
 const AMMO = new Set(['torp', 'missile', 'mortar', 'depth', 'mine', 'ballistic', 'flare', 'chaff', 'decoy', 'smoker']);
 /** peças que não funcionam com o submarino mergulhado */
 const SURFACE_ONLY = new Set(['cannon', 'mortar', 'mg', 'missile', 'ballistic', 'flare', 'chaff', 'smoker', 'depth', 'pd', 'djammer']);
+/** quanto dano cada tipo de arma causa em um porto (um tiro atinge um ponto só; explosões valem por várias peças) */
+const PORT_MULT = { shell: 1.3, rail: 2, bullet: 0.5, heavy: 0.7, flame: 0.3, torp: 5, missile: 4.5, mortar: 3.5, ballistic: 14, inc: 3, mine: 4, mag: 5, depth: 0.4, nuke: 14, bomb: 3, emp: 0, cook: 0 };
+/** armas de ataque: os alvos do Campo de testes não as usam (defesas, escudo e sensores continuam funcionando) */
+const OFFENSIVE = new Set(['cannon', 'mortar', 'mg', 'torp', 'missile', 'ballistic', 'mine', 'depth', 'hangar']);
+/** alvos de teste do Campo de testes: 5×7, ponte no centro; tops = [x, y, peça] */
+const SANDBOX_TARGETS = (() => {
+  const mk = (id, name, ch, tops, br = 'B') => {
+    const H = [], T = Array.from({ length: 7 }, () => Array(5).fill(' '));
+    for (let y = 0; y < 7; y++) { let r = ''; for (let x = 0; x < 5; x++) r += (x === 2 && y === 3) ? br : ch; H.push(r); }
+    for (const [x, y, c] of tops) T[y][x] = c;
+    return { id, name, power: 0, minWave: 1, design: makeDesign(H, T.map(r => r.join(''))) };
+  };
+  return [
+    mk('tgt_light', 'Alvo leve (casco leve)', 'o', []),
+    mk('tgt_std', 'Alvo comum (casco comum)', '#', []),
+    mk('tgt_heavy', 'Alvo blindado (blindagem pesada)', '@', [], 'b'),
+    mk('tgt_shield', 'Alvo com escudos (3 geradores)', '#', [[0, 0, 'G'], [4, 0, 'G'], [0, 6, 'G']]),
+    mk('tgt_pd', 'Alvo com defesas pontuais', '#', [[1, 0, 'D'], [3, 0, 'D'], [2, 1, 'н']]),
+    mk('tgt_cm', 'Alvo com todas as contramedidas', '#', [[0, 0, 'ο'], [4, 0, 'ф'], [0, 6, 'ц'], [4, 6, 'J'], [1, 1, 'ш'], [3, 1, 'щ'], [2, 0, 'D']]),
+    mk('tgt_stealth', 'Alvo furtivo', 's', [[2, 0, 'Q']]),
+    mk('tgt_motor', 'Alvo com motores (para mísseis térmicos)', '#', [[1, 6, 'e'], [2, 6, 'E'], [3, 6, 'e']]),
+    mk('tgt_sub', 'Alvo submarino (imerso)', '#', [[2, 5, 'K']], 'U'),
+  ];
+})();
+
 /** projéteis de tiro direto que param nas ilhas */
 const LAND_BLOCK = new Set(['shell', 'bullet', 'heavy', 'flame', 'rail', 'torp', 'missile']);
 /** célula protegida contra fogo (casco corta-fogo ou placa corta-fogo por cima) */
@@ -398,7 +423,7 @@ class Ship {
     const fx = Math.sin(this.ang), fy = -Math.cos(this.ang), rx = Math.cos(this.ang), ry = Math.sin(this.ang);
     let vf = this.vx * fx + this.vy * fy, vs = this.vx * rx + this.vy * ry;
     const th = clamp(inp.throttle, -1, 1), thrust = th >= 0 ? th : th * 0.4;
-    const pm = (1 + 0.15 * (this.fx.m || 0)) * (1 - 0.35 * this.wet) * (this.hooked > 0 ? 0.5 : 1);      // maquinistas, água e gancho
+    const pm = (1 + 0.15 * (this.fx.m || 0)) * (1 - 0.35 * this.wet) * (this.hooked > 0 ? 0.5 : 1) * (this.carrying ? 0.85 : 1);      // maquinistas, água, gancho e bandeira
     const accel = (st.accel + (st.accelSub - st.accel) * this.depth) * pm, mxs = (st.maxSpeed + (st.maxSpeedSub - st.maxSpeed) * this.depth) * pm;
     vf += (accel * thrust - 0.25 * vf) * dt;
     vs *= Math.exp(-st.grip * dt);
@@ -413,6 +438,7 @@ class Ship {
     if (this.x > lim) { this.x = lim; this.vx = -Math.abs(this.vx) * 0.3; }
     if (this.y < -lim) { this.y = -lim; this.vy = Math.abs(this.vy) * 0.3; }
     if (this.y > lim) { this.y = lim; this.vy = -Math.abs(this.vy) * 0.3; }
+    if (this.dummy) { this.x = this.ax; this.y = this.ay; this.vx = this.vy = 0; this.ang = this.aang; this.angVel = 0; }      // alvo do Campo de testes: fica parado onde foi colocado
     this.ca = Math.cos(this.ang); this.sa = Math.sin(this.ang);
     this.flame += ((th > 0 && st.engines && this.depth < 0.5 ? th : 0) - this.flame) * Math.min(1, dt * 6);
     this.speed = Math.hypot(this.vx, this.vy);
@@ -434,7 +460,7 @@ class Ship {
     for (const c of this.list) {
       if (c.dead) continue;
       if (c.flash > 0) c.flash -= dt;
-      if (c.top) this.updatePart(c, dt);
+      if (c.top && !(this.dummy && OFFENSIVE.has(PARTS[c.top.type].kind))) this.updatePart(c, dt);
     }
 
     this.emitTrail(dt);
@@ -939,7 +965,7 @@ const Battle = {
   ships: [], shots: [], parts: [], player: null, cam: { x: 0, y: 0 }, shake: 0, time: 0,
   keys: new Set(), mouse: { x: 0, y: 0, left: false, right: false },
   wave: 1, state: 'idle', running: false, last: 0, clearTimer: 0, overTimer: 0,
-  runCoins: 0, kills: 0, design: null, hud: {}, mode: 'campaign', drones: [], flares: [], smokes: [], map: null, islands: [], env: null, envMul: 1, objMode: '', nukeT: 0, nukePos: null, zoneState: null, objState: null, strikePt: null, respawnQ: [], mission: null, wxT: 0, bolt: 0, drops: [], noFog: false, friendlyFire: false, hostPaused: false, teamLast: {}, skirmish: null, localIds: new Set(), zoom: 1, shotSeq: 0, myDesign: null, cfg: null, deadNotice: false, contacts: new Map(), obs: [], aiAware: true, aiLast: { x: 0, y: 0 }, stealthT: 0,
+  runCoins: 0, kills: 0, design: null, hud: {}, mode: 'campaign', drones: [], flares: [], smokes: [], sb: null, ports: [], flags: [], crates: [], nukes: [], scars: [], crateT: 0, map: null, islands: [], env: null, envMul: 1, objMode: '', nukeT: 0, nukePos: null, zoneState: null, objState: null, strikePt: null, respawnQ: [], mission: null, wxT: 0, bolt: 0, drops: [], noFog: false, friendlyFire: false, hostPaused: false, teamLast: {}, skirmish: null, localIds: new Set(), zoom: 1, shotSeq: 0, myDesign: null, cfg: null, deadNotice: false, contacts: new Map(), obs: [], aiAware: true, aiLast: { x: 0, y: 0 }, stealthT: 0,
 
   init() {
     this.canvas = document.getElementById('game'); this.ctx = this.canvas.getContext('2d');
@@ -947,6 +973,7 @@ const Battle = {
     for (const id of ['wave', 'enemies', 'coins', 'hp-fill', 'hp-text', 'speed', 'cd-cannon', 'cd-torp', 'cd-mortar', 'row-cannon', 'row-torp', 'row-mortar', 'row-shield', 'shield-fill', 'row-stealth', 'stealth-fill', 'vision', 'row-depth', 'depth-fill', 'row-batt', 'batt-fill', 'row-mine', 'cd-mine', 'row-flood', 'flood-fill', 'row-fire', 'fire-text', 'crew', 'row-ball', 'cd-ball'])
       this.hud[id] = document.getElementById('hud-' + id);
     this.fogCv = document.createElement('canvas'); this.fogCtx = this.fogCv.getContext('2d');
+    this.sbBind();
     this.mini.addEventListener('pointerdown', e => {                  // clique/toque no minimapa marca a região do míssil balístico
       e.preventDefault(); e.stopPropagation();
       const r = this.mini.getBoundingClientRect();
@@ -959,6 +986,7 @@ const Battle = {
       if (e.repeat) return;
       this.keys.add(e.code);
       if (e.code === 'KeyV' && this.player && !this.player.remote) this.player.input.dive = true;      // mergulhar/emergir
+      if (e.code === 'KeyT' && this.sb) this.sbTogglePanel();             // Campo de testes: abre/fecha o painel
       if (e.code === 'Escape' || e.code === 'KeyP') this.togglePause();
       if (e.code === 'KeyM') { SFX.muted = !SFX.muted; }
       if (e.code === 'Minus' || e.code === 'NumpadSubtract') this.setZoom(this.zoom / 1.15);
@@ -1011,10 +1039,15 @@ const Battle = {
   start(design, wave, skirmish) {
     SFX.init();
     this.mode = 'campaign'; document.getElementById('screen-battle').classList.remove('online');
-    setArena(3600); this.noFog = false; this.friendlyFire = false; this.hostPaused = false;
-    this.objMode = (skirmish && skirmish.mode) || ''; this.objState = null; this.zoneState = null; this.respawnQ = []; this.mission = null; this.strikePt = null; this.flares = []; this.smokes = [];
+    this.objMode = (skirmish && skirmish.mode) || '';
+    const so = this.objMode ? Object.assign({}, MODE_OPTS_DEFAULT, skirmish.opts || {}) : null;       // opções do modo (tamanho do mapa, névoa, fogo amigo…)
+    setArena(so ? so.arena : 3600); this.noFog = so ? !so.fog : false; this.friendlyFire = so ? !!so.ff : false; this.hostPaused = false;
+    this.objState = null; this.zoneState = null; this.respawnQ = []; this.mission = null; this.strikePt = null; this.flares = []; this.smokes = [];
+    this.ports = []; this.flags = []; this.crates = []; this.nukes = []; this.scars = []; this.crateT = 0;
     document.getElementById('screen-battle').classList.toggle('objmode', !!this.objMode);
-    this.setMap(this.offlineMap(this.objMode));
+    const sandbox = !!(skirmish && skirmish.sandbox);                            // Campo de testes: mar vazio, sem fim de partida
+    document.getElementById('screen-battle').classList.toggle('sandbox', sandbox); this.sb = null;
+    this.setMap(sandbox ? genMap((Math.random() * 1e9) | 0, 3600, 'oceano', 0, '') : this.offlineMap(this.objMode, so));
     this.design = design; this.myDesign = design; this.wave = wave; this.runCoins = 0; this.kills = 0;
     this.clearTimer = 0; this.overTimer = 0;
     this.ships = []; this.shots = []; this.parts = []; this.time = 0; this.shake = 0;
@@ -1027,6 +1060,7 @@ const Battle = {
     this.resize();
     this.skirmish = skirmish || null;
     if (this.objMode) this.startObjective(this.skirmish);
+    else if (sandbox) this.startSandbox();
     else if (this.skirmish) this.spawnSkirmish(); else this.spawnWave();
     this.state = 'playing';
     if (!this.running) { this.running = true; this.last = performance.now(); requestAnimationFrame(t => this.loop(t)); }
@@ -1043,10 +1077,10 @@ const Battle = {
     this.bolt = 0; this.wxT = rand(4, 10);
   },
   /** mapa do modo offline (campanha usa as opções de Meta.map) */
-  offlineMap(mode) {
+  offlineMap(mode, opts) {
     const M = Meta.map || { env: 'rand', level: 2 };
     const env = (M.env === 'rand' || !BIOMES[M.env]) ? BIOME_KEYS[(Math.random() * BIOME_KEYS.length) | 0] : M.env;
-    return genMap((Math.random() * 1e9) | 0, 3600, env, M.level == null ? 2 : M.level, mode || '');
+    return genMap((Math.random() * 1e9) | 0, (opts && opts.arena) || 3600, env, M.level == null ? 2 : M.level, mode || '', opts);
   },
 
   stop() { this.running = false; this.state = 'idle'; },
@@ -1054,9 +1088,9 @@ const Battle = {
   /* ----------------------------------------------------- modo online */
   startOnline(cfg) {
     SFX.init();
-    this.mode = 'online'; document.getElementById('screen-battle').classList.add('online');
+    this.mode = 'online'; document.getElementById('screen-battle').classList.add('online'); document.getElementById('screen-battle').classList.remove('sandbox'); this.sb = null;
     setArena(cfg.settings.arena || 3600); this.hostPaused = false; this.applyRules(cfg.settings);
-    this.objMode = (cfg.settings.mode === 'zone' || cfg.settings.mode === 'convoy') ? cfg.settings.mode : ''; this.objState = null; this.zoneState = null; this.respawnQ = []; this.mission = null; this.strikePt = null; this.flares = []; this.smokes = [];
+    this.objMode = (cfg.settings.mode === 'zone' || cfg.settings.mode === 'convoy') ? cfg.settings.mode : ''; this.objState = null; this.zoneState = null; this.respawnQ = []; this.mission = null; this.strikePt = null; this.flares = []; this.smokes = []; this.ports = []; this.flags = []; this.crates = []; this.nukes = []; this.scars = [];
     document.getElementById('screen-battle').classList.toggle('objmode', !!this.objMode);
     this.setMap(genMap(cfg.map.seed, cfg.settings.arena || 3600, cfg.map.env, cfg.map.level, this.objMode));
     this.cfg = cfg; this.myDesign = cfg.me.design; this.shotSeq = 0; this.deadNotice = false;
@@ -1217,7 +1251,107 @@ const Battle = {
     });
   },
 
+  /* ------------------------------------------------------------------ Campo de testes */
+  /** modelos que o painel oferece: alvos de teste e os modelos de bots (inclui o clone do seu navio) */
+  sbModels() { return SANDBOX_TARGETS.concat(this.botPool()); },
+  startSandbox() {
+    this.sb = { n: 0, specs: [], regen: true, reveal: true, dmg: 0, win: [], last: new Map(), queue: [], pt: 0, uiT: 0, t0: 0 };
+    this.noFog = true; this.wave = 5; this.teamLast = {};
+    const $ = id => document.getElementById(id), sel = $('sb-model'), opt = (m) => `<option value="${m.id}">${m.name}</option>`;
+    sel.innerHTML = '<optgroup label="Alvos de teste">' + SANDBOX_TARGETS.map(opt).join('') + '</optgroup><optgroup label="Modelos de bots">' + this.botPool().map(opt).join('') + '</optgroup>';
+    sel.value = 'tgt_std'; $('sb-regen').checked = true; $('sb-reveal').checked = true; $('sb-panel').classList.remove('closed');
+    this.sbAdd(1);
+    UI.banner('CAMPO DE TESTES', 'Alvos parados · tecla T abre/fecha o painel');
+  },
+  /** coloca um alvo parado (guarda a posição para reconstruir) */
+  sbSpawn(modelId, x, y, ang, spec) {
+    const m = this.sbModels().find(q => q.id === modelId) || SANDBOX_TARGETS[1];
+    const sp = spec || { modelId, x, y, ang };
+    if (!spec) this.sb.specs.push(sp);                                         // lista de tudo que foi colocado (para reconstruir)
+    const b = this.makeBot(m.design, 'e', x, y, ang, m.name.slice(0, 26), 'normal', 'dm' + (++this.sb.n));
+    b.ai = null; b.dummy = true; b.ax = x; b.ay = y; b.aang = ang; b.sbSpec = sp;
+    if (this.sb.reveal) { b.revealT = 1e9; b.revealR = 1e7; }
+    if (b.isSub) { b.diveCmd = true; b.depth = 1; b.sub = true; }
+    this.ships.push(b);
+    return b;
+  },
+  /** n alvos em fila na direção do cursor, à distância escolhida no painel */
+  sbAdd(n) {
+    const sb = this.sb, pl = this.player;
+    if (!sb || pl.sinking || pl.dead) return;
+    if (this.ships.filter(s => s.dummy).length + n > 30) { UI.banner('LIMITE', 'No máximo 30 alvos ao mesmo tempo'); return; }
+    const $ = id => document.getElementById(id);
+    const id = $('sb-model').value, dist = +$('sb-dist').value, face = $('sb-face').value;
+    const ax = pl.input.aimX - pl.x, ay = pl.input.aimY - pl.y, dir = Math.hypot(ax, ay) > 40 ? Math.atan2(ax, -ay) : pl.ang;
+    const [fx, fy] = dirOf(dir), px = -fy, py = fx, lim = HALF - 140;
+    for (let i = 0; i < n; i++) {
+      const off = (i - (n - 1) / 2) * 170;
+      const x = clamp(pl.x + fx * dist + px * off, -lim, lim), y = clamp(pl.y + fy * dist + py * off, -lim, lim);
+      this.sbSpawn(id, x, y, Math.atan2(pl.x - x, -(pl.y - y)) + ({ bow: 0, side: Math.PI / 2, stern: Math.PI }[face] || 0));
+    }
+  },
+  sbClear() { this.ships = this.ships.filter(s => !s.dummy); this.sb.queue = []; this.sb.last.clear(); this.sb.specs = []; },
+  /** refaz todos os alvos colocados (novos, inteiros, inclusive os afundados) nas mesmas posições */
+  sbRebuild() {
+    const specs = this.sb.specs.slice();
+    this.ships = this.ships.filter(s => !s.dummy); this.sb.queue = []; this.sb.last.clear();
+    for (const sp of specs) this.sbSpawn(sp.modelId, sp.x, sp.y, sp.ang, sp);
+  },
+  sbResetMeter() { const sb = this.sb; sb.dmg = 0; sb.win = []; sb.t0 = this.time; sb.peak = 0; },
+  /** a cada quadro: medidor de dano, alvos reconstruídos, renascimento do jogador e texto do painel; devolve quantos alvos restam */
+  sbUpdate(dt) {
+    const sb = this.sb, pl = this.player;
+    let alive = 0;
+    for (const s of this.ships) {                                             // medidor: vida do casco + peças + escudo que os alvos perderam
+      if (!s.dummy) continue;
+      let hp = s.shield || 0; for (const c of s.list) hp += Math.max(0, c.hp) + (c.top ? Math.max(0, c.top.hp) : 0);
+      const last = sb.last.get(s);
+      if (last !== undefined && hp < last - 1e-6) { sb.dmg += last - hp; sb.win.push([this.time, last - hp]); }
+      sb.last.set(s, hp);
+      if (!s.sinking && !s.dead) alive++;
+    }
+    for (const q of sb.queue) q.t -= dt;
+    if (sb.queue.some(q => q.t <= 0)) {
+      const due = sb.queue.filter(q => q.t <= 0); sb.queue = sb.queue.filter(q => q.t > 0);
+      for (const q of due) this.sbSpawn(q.spec.modelId, q.spec.x, q.spec.y, q.spec.ang, q.spec);
+    }
+    if (pl.dead) { sb.pt += dt; if (sb.pt > 1.2) { sb.pt = 0; this.respawnMe(0, 0, 0); } } else sb.pt = 0;
+    sb.uiT -= dt;
+    if (sb.uiT <= 0) {
+      sb.uiT = 0.25;
+      while (sb.win.length && sb.win[0][0] < this.time - 5) sb.win.shift();
+      const dps = sb.win.reduce((a, w) => a + w[1], 0) / 5;
+      sb.peak = Math.max(sb.peak || 0, dps);
+      const e = document.getElementById('sb-stats');
+      if (e) e.innerHTML = `Dano causado: <b>${sb.dmg.toFixed(0)}</b><br>DPS (últimos 5 s): <b>${dps.toFixed(1)}</b> · pico <b>${sb.peak.toFixed(1)}</b><br>Alvos: <b>${alive}</b>${sb.queue.length ? ' (+' + sb.queue.length + ' reconstruindo)' : ''}`;
+    }
+    return alive;
+  },
+  sbTogglePanel() { if (this.sb) document.getElementById('sb-panel').classList.toggle('closed'); },
+  /** liga os botões do painel (uma vez, na inicialização) */
+  sbBind() {
+    const $ = id => document.getElementById(id), on = (id, fn) => { $(id).onclick = () => { if (this.sb) fn(); $(id).blur(); }; };
+    on('sb-toggle', () => this.sbTogglePanel());
+    on('sb-add', () => this.sbAdd(1)); on('sb-row5', () => this.sbAdd(5));
+    on('sb-clear', () => this.sbClear()); on('sb-rebuild', () => this.sbRebuild());
+    on('sb-me', () => { const pl = this.player; this.respawnMe(pl.x, pl.y, pl.ang); });
+    on('sb-meter', () => this.sbResetMeter());
+    $('sb-dist').oninput = () => { $('sb-dist-val').textContent = $('sb-dist').value; $('sb-dist').blur(); };
+    $('sb-regen').onchange = () => { if (this.sb) this.sb.regen = $('sb-regen').checked; $('sb-regen').blur(); };
+    $('sb-reveal').onchange = () => {
+      if (!this.sb) return;
+      this.sb.reveal = $('sb-reveal').checked;
+      for (const s of this.ships) if (s.dummy) { s.revealT = this.sb.reveal ? 1e9 : 0; s.revealR = this.sb.reveal ? 1e7 : 0; }
+      $('sb-reveal').blur();
+    };
+  },
+
   onSunk(ship) {
+    if (this.sb && ship.dummy) {                                              // alvo do Campo de testes: sem moedas; pode ser reconstruído
+      this.explosion(ship.x, ship.y, 2);
+      if (this.sb.regen) this.sb.queue.push({ t: 3.4, spec: ship.sbSpec });
+      return;
+    }
     this.explosion(ship.x, ship.y, 2);
     if (this.mode === 'online') { if (ship === this.player) Online.sendDied(ship.lastAttacker); else if (!ship.remote && ship.ai) Online.sendDied(ship.lastAttacker, ship.id); return; }
     if (this.objMode) { this.objSunk(ship); return; }
@@ -1437,6 +1571,17 @@ const Battle = {
         const dd = Math.hypot(og.x - s.x, og.y - s.y);
         inp.steer = clamp(angDiff(this.avoidIslands(s, Math.atan2(og.x - s.x, -(og.y - s.y))), s.ang) * 2, -1, 1);
         inp.throttle = s.stats.maxSpeed ? (dd < og.hold ? 0.12 : 0.75) : 0;
+        if (og.port) {                                                  // bombardeia o porto inimigo ao alcance
+          inp.aimX = og.x; inp.aimY = og.y; inp.tvx = 0; inp.tvy = 0;
+          inp.fireMain = s.maxRange > 0 && dd < s.maxRange * 0.95;
+          a.torpGate -= dt; a.missGate -= dt;
+          if (s.hasTorp && a.torpGate <= 0 && dd < 620 && s.list.some(c => c.top && PARTS[c.top.type].kind === 'torp' && c.top.cd <= 0)) { inp.fireTorp = true; a.torpGate = rand(4.5, 6.5) * a.gate; }
+          if (s.stats.missiles && a.missGate <= 0 && dd < Math.min(s.missRange || 780, 1200) && s.list.some(c => c.top && PARTS[c.top.type].kind === 'missile' && c.top.cd <= 0)) { inp.fireMissile = true; a.missGate = rand(3, 5) * a.gate; }
+          if (s.stats.ballistics) {
+            a.ballGate = (a.ballGate === undefined ? rand(6, 12) : a.ballGate) - dt;
+            if (a.ballGate <= 0 && dd > 450 && s.list.some(c => c.top && PARTS[c.top.type].kind === 'ballistic' && c.top.cd <= 0)) { inp.strike = true; inp.strikeX = og.x; inp.strikeY = og.y; inp.fireBallistic = true; a.ballGate = rand(8, 14) * a.gate; }
+          }
+        }
         return;
       }
       const L = a.last || this.teamLast[s.team];
@@ -1526,6 +1671,7 @@ const Battle = {
     this.updateDrones(dt);
     this.updateFlares(dt);
     this.updateSmokes(dt);
+    this.updateNukes(dt);
     if (this.nukeT > 0) this.nukeT = Math.max(0, this.nukeT - dt * 0.8);
     this.islandStep(dt);
     this.mapFx(dt);
@@ -1622,6 +1768,7 @@ const Battle = {
       for (let i = 0; i < steps && !p.dead; i++) {
         p.x += p.vx * dt / steps; p.y += p.vy * dt / steps;
         if (this.islands.length && LAND_BLOCK.has(p.kind) && this.hitLand(p)) break;
+        if (this.ports.length && this.portHit(p)) { p.dead = true; break; }
         for (const s of this.ships) {
           if (this.sameTeam(s, p.team, p.owner) || s.sinking || (s.remote && s.seenT <= 0)) continue;
           if (s.depth > DEEP && p.kind !== 'torp') continue;          // submerso: só torpedos o alcançam
@@ -1662,6 +1809,8 @@ const Battle = {
     if (this.mode === 'online') {
       alive = this.ships.filter(s => s.team !== this.player.team && !s.dead && s.seenT > 0).length;
       this.onlineTick(dt);
+    } else if (this.sb) {
+      alive = this.sbUpdate(dt);
     } else if (this.objMode) {
       alive = this.objUpdate(dt);
     } else {
@@ -1827,9 +1976,14 @@ const Battle = {
   startObjective(sk) {
     sk = sk || {};
     const mode = this.objMode, map = this.map, pl = this.player, diff = sk.diff || Meta.bots.diff, avoid = [[pl.x, pl.y]];
-    this.mission = { type: mode, t: 0, limit: 480, scoreLimit: 200, lives: 3, over: false, maxProg: 0, cargoT: 0, len: mode === 'convoy' ? routeLength(map.route) : 0 };
+    const O = Object.assign({}, MODE_OPTS_DEFAULT, sk.opts || {});
+    this.mission = { type: mode, t: 0, limit: O.minutes > 0 && mode !== 'defend' ? O.minutes * 60 : 0, scoreLimit: mode === 'loot' ? O.lootScore : mode === 'flag' ? O.flags : O.score, lives: O.lives, over: false, maxProg: 0, cargoT: 0,
+      len: mode === 'convoy' ? routeLength(map.route) : 0, O, respawn: O.respawn, score: { p: 0, e: 0 }, wave: 0, waveT: 4, wavesTotal: O.waves };
     this.zoneState = { z: [], score: { p: 0, e: 0 } };
     this.wave = 0; this.teamLast = {};
+    if (mode === 'port' || mode === 'flag' || mode === 'defend') this.initPorts(O, mode);
+    if (mode === 'flag') this.initFlags();
+    if (mode === 'loot') { this.crates = []; for (let i = 0; i < O.crates; i++) this.spawnCrate(); }
     const pool = this.botPool().filter(p => p.id !== 'meu');
     const pick = (lo, hi) => { const o = pool.filter(p => p.power >= lo && p.power <= hi), l = o.length ? o : pool; return l[(Math.random() * l.length) | 0]; };
     const addBot = (p, team, side, label, id) => {
@@ -1841,25 +1995,186 @@ const Battle = {
     for (let i = 0; i < nAl; i++) { const p = pick(2, 6); addBot(p, 'p', 'A', 'Aliado · ' + p.name, 'al' + i); }
     const list = [];
     for (const id in (sk.counts || {})) { const p = pool.find(q => q.id === id); for (let i = 0; i < sk.counts[id]; i++) if (p) list.push(p); }
-    const nEn = list.length || (3 + nAl);
+    const nEn = mode === 'defend' ? 0 : (list.length || (3 + nAl));                    // defesa do porto: os inimigos vêm em ondas
     for (let i = 0; i < nEn; i++) { const p = list[i] || pick(2, 6); addBot(p, 'e', 'B', p.name, 'ai' + i); }
     if (mode === 'convoy') {
       const r = map.route, a = Math.atan2(r[1][0] - r[0][0], -(r[1][1] - r[0][1]));
       const c = this.makeBot(CARGO_DESIGN, 'p', r[0][0] + 90, r[0][1], a, 'Cargueiro', 'normal', 'cargo');
       c.cargo = true; this.ships.push(c);
     }
-    UI.banner(mode === 'zone' ? 'CONTROLE DE ZONA' : 'COMBOIO', mode === 'zone' ? 'Segure as zonas · primeiro a ' + this.mission.scoreLimit + ' pontos' : 'Escolte o cargueiro até o fim · ' + this.mission.lives + ' vidas');
+    const m = this.mission, lim = m.limit ? ' · ' + Math.round(m.limit / 60) + ' min' : '';
+    const BN = {
+      zone: ['CONTROLE DE ZONA', 'Segure as zonas · primeiro a ' + m.scoreLimit + ' pontos' + lim],
+      convoy: ['COMBOIO', 'Escolte o cargueiro até o fim · ' + m.lives + ' vidas' + lim],
+      port: ['ATAQUE AO PORTO', 'Destrua o porto inimigo e defenda o seu' + lim],
+      flag: ['CAPTURAR A BANDEIRA', 'Leve a bandeira inimiga ao seu porto · primeiro a ' + m.scoreLimit + lim],
+      defend: ['DEFESA DO PORTO', 'Aguente ' + m.wavesTotal + ' ondas · não deixe o porto cair'],
+      loot: ['CORRIDA DE SUPRIMENTOS', 'Pegue as caixas · primeiro a ' + m.scoreLimit + ' pontos' + lim],
+    }[mode];
+    UI.banner(BN[0], BN[1]);
+  },
+
+  /* ----------- portos, bandeiras e suprimentos (modos Porto, Bandeira, Defesa e Suprimentos) ----------- */
+  initPorts(O, mode) {
+    this.ports = (this.map.ports || []).map((p, i) => {
+      const hp = Math.round(1500 * O.portHp), n = O.turrets;
+      return { id: 'port' + i, team: p.team, x: p.x, y: p.y, r: p.r, hp, max: hp, flash: 0, dead: false, safe: mode === 'flag',                  // no modo Bandeira o porto é só uma base (indestrutível)
+        turrets: Array.from({ length: n }, (_, k) => ({ a: k / Math.max(1, n) * TAU + 0.8, ang: p.team === 'p' ? Math.PI / 2 : -Math.PI / 2, cd: rand(0, 1.5) })) };
+    });
+  },
+  portOf(team) { return this.ports.find(p => p.team === team); },
+  /** dano em um porto (multiplicador por tipo de arma; mísseis balísticos arrasam) */
+  hitPort(port, dmg, kind) {
+    if (port.dead || port.safe) return;
+    port.hp -= dmg * (PORT_MULT[kind] === undefined ? 1 : PORT_MULT[kind]); port.flash = 0.2;
+    if (port.hp > 0) return;
+    port.hp = 0; port.dead = true;
+    for (let i = 0; i < 9; i++) this.explosion(port.x + rand(-port.r * 0.6, port.r * 0.6), port.y + rand(-port.r * 0.6, port.r * 0.6), rand(1.2, 2.4));
+    this.shake = Math.min(1, this.shake + 0.5);
+    this.portDestroyed(port);
+  },
+  portDestroyed(port) {
+    const m = this.mission; if (!m || m.over) return;
+    const mine = port.team === this.player.team;
+    if (m.type === 'port') this.objEnd(!mine, mine ? 'Seu porto foi destruído!' : 'Você destruiu o porto inimigo!', 'Tempo de partida: ' + Math.floor(m.t / 60) + ':' + String(Math.floor(m.t % 60)).padStart(2, '0'));
+    else if (m.type === 'defend') this.objEnd(false, 'O porto caiu', 'Você aguentou ' + Math.max(0, m.wave - 1) + ' de ' + m.wavesTotal + ' ondas.');
+  },
+  /** um tiro de trajetória reta entrou na área de um porto inimigo? */
+  portHit(p) {
+    for (const port of this.ports) {
+      if (port.dead || port.team === p.team || Math.hypot(p.x - port.x, p.y - port.y) > port.r) continue;
+      if (p.kind === 'torp' || p.kind === 'missile') this.blast(p.x, p.y, p.splash, p.dmg, p.team, p.owner, this.warKind(p), null, p.kind === 'torp' ? true : undefined);
+      else { this.hitPort(port, p.dmg, p.kind); this.impact(p.x, p.y); }
+      return true;
+    }
+    return false;
+  },
+  /** torres de defesa e reparo dos portos */
+  updatePorts(dt) {
+    for (const port of this.ports) {
+      if (port.flash > 0) port.flash -= dt;
+      if (port.dead) continue;
+      for (const t of port.turrets) {
+        const tx = port.x + Math.cos(t.a) * port.r * 0.62, ty = port.y + Math.sin(t.a) * port.r * 0.62;
+        if ((t.cd -= dt) > 0) { t.ang += angDiff(t.want === undefined ? t.ang : t.want, t.ang) * Math.min(1, dt * 6); continue; }
+        let best = null, bd = 560;
+        for (const s of this.ships) {
+          if (s.team === port.team || s.sinking || s.dead || s.depth > DEEP) continue;
+          const d = Math.hypot(s.x - tx, s.y - ty);
+          if (d < bd) { bd = d; best = s; }
+        }
+        if (!best) { t.cd = 0.3; continue; }
+        t.want = Math.atan2(best.x - tx, -(best.y - ty)); t.ang = t.want; t.cd = 1.3;
+        const lead = bd / 480, a = Math.atan2(best.x + (best.vx || 0) * lead - tx, -(best.y + (best.vy || 0) * lead - ty)) + rand(-0.04, 0.04), [dx, dy] = dirOf(a);
+        this.shots.push({ kind: 'shell', x: tx + dx * 12, y: ty + dy * 12, vx: dx * 480, vy: dy * 480, life: 600 / 480, dmg: 2.6, team: port.team, owner: port.id, pierce: 0, big: false });
+        this.addP({ t: 'flash', x: tx + dx * 12, y: ty + dy * 12, life: 0.09, s: 8, g: 20 }); SFX.play('cannon', tx, ty);
+      }
+    }
+    for (const s of this.ships) {                                                  // navios do dono dentro do porto: conserto
+      const port = this.portOf(s.team);
+      if (!port || port.dead || s.sinking || s.dead || s.remote || Math.hypot(s.x - port.x, s.y - port.y) > port.r + 30) continue;
+      s.portT = (s.portT || 0) + dt;
+      s.water = Math.max(0, s.water - 5 * dt);
+      if (s.portT >= 0.5) {
+        s.portT = 0; let worst = null, wr = 1;
+        for (const c of s.list) { if (c.dead) continue; const r = c.hp / c.maxHp; if (r < wr) { wr = r; worst = c; } if (c.fire > 0 && Math.random() < 0.5) c.fire = 0; }
+        if (worst) { worst.hp = Math.min(worst.maxHp, worst.hp + 3); if (s === this.player) { const [bx, by] = s.cellWorld(worst); this.addP({ t: 'plus', x: bx, y: by, vy: -26, life: 0.9, s: 6 }); } }
+        for (const c of s.list) if (c.top && c.top.hp < c.top.maxHp) { c.top.hp = Math.min(c.top.maxHp, c.top.hp + 2); break; }
+      }
+    }
+  },
+  initFlags() { this.flags = this.ports.map(pt => ({ team: pt.team, hx: pt.x, hy: pt.y, x: pt.x, y: pt.y, state: 'home', carrier: null, dropT: 0 })); },
+  flagHome(f) { f.state = 'home'; f.x = f.hx; f.y = f.hy; f.carrier = null; f.dropT = 0; },
+  updateFlags(dt) {
+    const m = this.mission;
+    for (const f of this.flags) {
+      if (f.state === 'carried') {
+        const c = f.carrier;
+        if (c && !c.sinking && !c.dead && this.ships.includes(c)) { f.x = c.x; f.y = c.y; continue; }
+        if (c) c.carrying = null;                                                  // quem carregava afundou: a bandeira cai
+        f.state = 'dropped'; f.carrier = null; f.dropT = 20;
+        UI.banner('BANDEIRA CAIU', f.team === this.player.team ? 'Recupere a sua bandeira!' : 'Pegue a bandeira inimiga!');
+      }
+      if (f.state === 'dropped' && (f.dropT -= dt) <= 0) { this.flagHome(f); continue; }
+      for (const s of this.ships) {
+        if (s.sinking || s.dead || s.cargo || Math.hypot(s.x - f.x, s.y - f.y) > 60 + s.radius * 0.3) continue;
+        if (s.team === f.team) { if (f.state === 'dropped') { this.flagHome(f); UI.banner('BANDEIRA RECUPERADA', ''); } }
+        else if (!s.carrying) {
+          f.state = 'carried'; f.carrier = s; s.carrying = f;
+          UI.banner(s.team === this.player.team ? 'VOCÊS PEGARAM A BANDEIRA!' : 'ELES PEGARAM A SUA BANDEIRA!', s.team === this.player.team ? 'Leve até o seu porto' : 'Afunde o carregador!');
+          break;
+        }
+      }
+    }
+    for (const f of this.flags) {                                                  // entrega: carregador no próprio porto com a própria bandeira em casa
+      if (f.state !== 'carried' || !f.carrier) continue;
+      const c = f.carrier, own = this.flags.find(g => g.team === c.team), pt = this.portOf(c.team);
+      if (!own || own.state !== 'home' || !pt || Math.hypot(c.x - pt.x, c.y - pt.y) > pt.r) continue;
+      m.score[c.team] = (m.score[c.team] || 0) + 1; c.carrying = null; this.flagHome(f);
+      UI.banner(c.team === this.player.team ? 'PONTO PARA VOCÊS!' : 'PONTO DOS INIMIGOS', 'Capturas: ' + m.score.p + ' × ' + m.score.e);
+      this.addP({ t: 'text', txt: '🚩 +1', x: pt.x, y: pt.y - 40, vy: -35, life: 2, s: 26, col: '#ffd166' });
+    }
+  },
+  spawnCrate() {
+    const lim = HALF - 320;
+    for (let k = 0; k < 40; k++) {
+      const x = rand(-lim, lim), y = rand(-lim, lim);
+      if (this.map && !freeOfIslands(this.map, x, y, 80)) continue;
+      if (this.crates.some(c => Math.hypot(c.x - x, c.y - y) < 160)) continue;
+      const r = Math.random(), kind = r < 0.16 ? 'gold' : r < 0.32 ? 'repair' : 'box';
+      this.crates.push({ x, y, kind, v: kind === 'gold' ? 3 : 1, age: 0 });
+      return;
+    }
+  },
+  updateCrates(dt) {
+    const m = this.mission;
+    for (const c of this.crates) c.age += dt;
+    for (const s of this.ships) {
+      if (s.sinking || s.dead || s.cargo || s.remote) continue;
+      for (const c of this.crates) {
+        if (c.taken || Math.hypot(s.x - c.x, s.y - c.y) > 46 + s.radius * 0.25) continue;
+        c.taken = true; m.score[s.team] = (m.score[s.team] || 0) + c.v;
+        if (c.kind === 'repair') for (const cell of s.list) { cell.hp = Math.min(cell.maxHp, cell.hp + cell.maxHp * 0.4); if (cell.top) cell.top.hp = Math.min(cell.top.maxHp, cell.top.hp + cell.top.maxHp * 0.4); cell.fire = 0; }
+        this.addP({ t: 'text', txt: (c.kind === 'repair' ? '🔧 +' : '📦 +') + c.v, x: c.x, y: c.y - 20, vy: -35, life: 1.6, s: 20, col: c.kind === 'gold' ? '#ffd166' : c.kind === 'repair' ? '#7bf0a8' : '#fff' });
+        if (s === this.player) this.shake = Math.min(1, this.shake + 0.03);
+      }
+    }
+    const before = this.crates.length;
+    this.crates = this.crates.filter(c => !c.taken);
+    this.crateT += dt;
+    if (this.crates.length < m.O.crates && (this.crateT > 3.5 || before !== this.crates.length)) { this.spawnCrate(); this.crateT = 0; }
+  },
+  /** Defesa do Porto: próxima onda de bots inimigos */
+  defendWave() {
+    const m = this.mission; m.wave++;
+    const power = Math.min(70, Math.round(m.wave * 2.4 + 1)), diff = (this.skirmish && this.skirmish.diff) || Meta.bots.diff;
+    const pool = this.botPool().filter(p => p.id !== 'meu' && p.minWave <= m.wave + 2), list = [];
+    let left = power;
+    while (left > 0 && list.length < 12) {
+      const opts = pool.filter(p => p.power <= left); if (!opts.length) break;
+      const p = opts[(Math.random() * opts.length) | 0]; list.push(p); left -= p.power;
+    }
+    if (!list.length) list.push(pool[0] || PRESETS[0]);
+    const avoid = this.ships.map(s => [s.x, s.y]);
+    list.forEach((p, i) => {
+      const sp = pickSpawn(this.map, 'B', Math.random, avoid); avoid.push([sp.x, sp.y]);
+      const b = this.makeBot(p.design, 'e', sp.x, sp.y, sp.a, p.name, diff, 'w' + m.wave + '_' + i);
+      b.preset = p; b.diffKey = diff; b.side = 'B'; this.ships.push(b);
+    });
+    UI.banner('ONDA ' + m.wave + ' / ' + m.wavesTotal, list.length + ' navio(s) inimigo(s) a caminho do seu porto');
   },
   objSunk(ship) {
     const m = this.mission;
     if (!m || m.over) return;
-    if (ship === this.player) { this.respawnQ.push({ t: 8, kind: 'player' }); UI.banner('AFUNDADO', 'Reaparecendo em 8 s…'); }
+    const rt = m.respawn || 8;
+    if (ship === this.player) { this.respawnQ.push({ t: rt, kind: 'player' }); UI.banner('AFUNDADO', 'Reaparecendo em ' + rt + ' s…'); }
     else if (ship.cargo) {
       m.lives--;
       if (m.lives <= 0) return this.objEnd(false, 'O cargueiro foi destruído', 'Acabaram as vidas do cargueiro.');
       this.respawnQ.push({ t: 10, kind: 'cargo' }); UI.banner('CARGUEIRO PERDIDO', m.lives + ' vida(s) restante(s) · renasce em 10 s');
     } else if (ship.ai) {
-      this.respawnQ.push({ t: 12, kind: 'bot', preset: ship.preset, team: ship.team, side: ship.side, label: ship.label, diff: ship.diffKey, id: ship.id });
+      if (!(m.type === 'defend' && ship.team === 'e'))                                  // na Defesa do Porto os inimigos vêm só nas ondas
+        this.respawnQ.push({ t: rt + 4, kind: 'bot', preset: ship.preset, team: ship.team, side: ship.side, label: ship.label, diff: ship.diffKey, id: ship.id });
       if (ship.team === 'e') this.kills++;
     }
   },
@@ -1888,7 +2203,23 @@ const Battle = {
     for (const q of this.respawnQ) q.t -= dt;
     if (this.respawnQ.some(q => q.t <= 0)) { const due = this.respawnQ.filter(q => q.t <= 0); this.respawnQ = this.respawnQ.filter(q => q.t > 0); for (const q of due) this.objRespawn(q); }
     const live = this.ships.filter(s => !s.sinking && !s.dead);
-    if (m.type === 'zone') {
+    if (this.ports.length) this.updatePorts(dt);
+    if (m.type === 'flag') {
+      this.updateFlags(dt);
+      if (!m.over && m.score.p >= m.scoreLimit) this.objEnd(true, 'Capturas suficientes!', 'Capturas: ' + m.score.p + ' × ' + m.score.e);
+      else if (!m.over && m.score.e >= m.scoreLimit) this.objEnd(false, 'Os inimigos capturaram mais bandeiras', 'Capturas: ' + m.score.p + ' × ' + m.score.e);
+    } else if (m.type === 'loot') {
+      this.updateCrates(dt);
+      if (!m.over && m.score.p >= m.scoreLimit) this.objEnd(true, 'Sua equipe juntou os suprimentos!', 'Pontos: ' + m.score.p + ' × ' + m.score.e);
+      else if (!m.over && m.score.e >= m.scoreLimit) this.objEnd(false, 'Os inimigos juntaram mais suprimentos', 'Pontos: ' + m.score.p + ' × ' + m.score.e);
+    } else if (m.type === 'defend') {
+      if (alive === 0) {
+        if (m.wave >= m.wavesTotal) this.objEnd(true, 'O porto resistiu!', 'Todas as ' + m.wavesTotal + ' ondas foram derrotadas.');
+        else if ((m.waveT -= dt) <= 0) { this.defendWave(); m.waveT = 6; }
+      } else m.waveT = 6;
+    } else if (m.type === 'port') {
+      /* o fim vem da destruição de um porto (portDestroyed) ou do tempo */
+    } else if (m.type === 'zone') {
       zoneStep(this.zoneState, this.map.zones, live, dt, ['p', 'e']);
       const sc = this.zoneState.score;
       if ((sc.p || 0) >= m.scoreLimit) this.objEnd(true, 'Sua equipe dominou as zonas!', 'Pontos: ' + Math.floor(sc.p) + ' × ' + Math.floor(sc.e || 0));
@@ -1901,8 +2232,15 @@ const Battle = {
         if (pr.t > m.len - 150) this.objEnd(true, 'O comboio chegou ao destino!', 'Vidas restantes do cargueiro: ' + m.lives);
       }
     }
-    if (!m.over && m.t >= m.limit) {
-      if (m.type === 'zone') { const sc = this.zoneState.score, w = (sc.p || 0) > (sc.e || 0); this.objEnd(w, w ? 'Tempo esgotado: sua equipe lidera!' : 'Tempo esgotado: os inimigos lideram', 'Pontos: ' + Math.floor(sc.p || 0) + ' × ' + Math.floor(sc.e || 0)); }
+    if (!m.over && m.limit && m.t >= m.limit) {                                    // fim por tempo: vence quem estiver na frente
+      const ptxt = (a, b) => 'Placar: ' + a + ' × ' + b;
+      if (m.type === 'zone') { const sc = this.zoneState.score, w = (sc.p || 0) > (sc.e || 0); this.objEnd(w, w ? 'Tempo esgotado: sua equipe lidera!' : 'Tempo esgotado: os inimigos lideram', ptxt(Math.floor(sc.p || 0), Math.floor(sc.e || 0))); }
+      else if (m.type === 'flag' || m.type === 'loot') { const w = m.score.p > m.score.e; this.objEnd(w, m.score.p === m.score.e ? 'Tempo esgotado: empate' : w ? 'Tempo esgotado: sua equipe lidera!' : 'Tempo esgotado: os inimigos lideram', ptxt(m.score.p, m.score.e)); }
+      else if (m.type === 'port') {
+        const mp = this.portOf('p'), ep = this.portOf('e'), a = Math.round(100 * mp.hp / mp.max), b = Math.round(100 * ep.hp / ep.max), w = a > b;
+        this.objEnd(w, a === b ? 'Tempo esgotado: empate' : w ? 'Tempo esgotado: seu porto está mais inteiro!' : 'Tempo esgotado: o porto inimigo está mais inteiro', 'Vida dos portos: ' + a + '% × ' + b + '%');
+      }
+      else if (m.type === 'defend') this.objEnd(true, 'O porto resistiu ao tempo!', 'Você aguentou até o fim do relógio.');
       else this.objEnd(false, 'Tempo esgotado', 'O cargueiro não chegou a tempo.');
     }
     return alive;
@@ -1925,6 +2263,29 @@ const Battle = {
   /** destino de um bot sem alvo no modo com objetivo: { x, y, hold } */
   objGoal(s) {
     if (!this.map) return null;
+    const m = this.mission, mt = m && m.type, idx = +(String(s.id).match(/(\d+)(?!.*\d)/) || [0, 0])[1];
+    if (mt === 'port' || mt === 'defend') {
+      const own = this.portOf(s.team), foe = this.ports.find(p => p.team !== s.team && !p.dead);
+      const attacker = mt === 'defend' ? s.team === 'e' : idx % 2 === 0;               // no Ataque ao Porto, metade do time ataca e metade defende
+      if (attacker && foe) return { x: foe.x, y: foe.y, hold: clamp((s.maxRange || 0) * 0.55, 120, 600), port: foe };
+      if (own && !own.dead) return { x: own.x + Math.cos(idx * 2.1) * own.r * 1.3, y: own.y + Math.sin(idx * 2.1) * own.r * 1.3, hold: 90 };
+      return foe ? { x: foe.x, y: foe.y, hold: 300, port: foe } : null;
+    }
+    if (mt === 'flag') {
+      const own = this.flags.find(f => f.team === s.team), foe = this.flags.find(f => f.team !== s.team), pt = this.portOf(s.team);
+      if (s.carrying && pt) return { x: pt.x, y: pt.y, hold: 20 };
+      if (own && own.state !== 'home' && own.carrier) return { x: own.x, y: own.y, hold: 40 };           // caça quem roubou a nossa bandeira
+      if (own && own.state === 'dropped') return { x: own.x, y: own.y, hold: 30 };
+      if (idx % 3 === 2 && pt) return { x: pt.x + Math.cos(idx) * 160, y: pt.y + Math.sin(idx) * 160, hold: 100 };   // um terço fica de guarda
+      if (foe && foe.state !== 'carried') return { x: foe.x, y: foe.y, hold: 25 };
+      if (pt) return { x: pt.x, y: pt.y, hold: 160 };
+      return null;
+    }
+    if (mt === 'loot') {
+      let best = null, bd = 1e9;
+      for (const c of this.crates) { const d = Math.hypot(c.x - s.x, c.y - s.y) - (c.kind === 'gold' ? 250 : 0); if (d < bd) { bd = d; best = c; } }
+      return best ? { x: best.x, y: best.y, hold: 10 } : { x: 0, y: 0, hold: 300 };
+    }
     if (this.map.zones.length) {
       const zs = this.zoneStates();
       let best = null, bd = 1e9;
@@ -1961,9 +2322,14 @@ const Battle = {
     if (this.mode === 'online') txt = Online.objText();
     else if (this.mission) {
       const m = this.mission;
+      const pct = pt => pt ? Math.round(100 * pt.hp / pt.max) + '%' : '—';
       if (m.type === 'zone') { const sc = this.zoneState.score; txt = '🏁 Zonas · você ' + Math.floor(sc.p || 0) + ' × ' + Math.floor(sc.e || 0) + ' inimigo · meta ' + m.scoreLimit; }
-      else { const pct = m.len ? Math.round(clamp((m.cargoT || 0) / m.len, 0, 1) * 100) : 0; txt = '🚢 Comboio ' + pct + '% · ❤ ' + m.lives; }
-      const left = Math.max(0, Math.round(m.limit - m.t)); txt += ' · ⏱ ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+      else if (m.type === 'port') txt = '⚓ Portos · seu ' + pct(this.portOf('p')) + ' × inimigo ' + pct(this.portOf('e'));
+      else if (m.type === 'flag') txt = '🚩 Bandeiras · você ' + m.score.p + ' × ' + m.score.e + ' inimigo · meta ' + m.scoreLimit + (this.player.carrying ? ' · CARREGANDO!' : '');
+      else if (m.type === 'defend') txt = '🛡 Onda ' + Math.max(1, m.wave) + '/' + m.wavesTotal + ' · Porto ' + pct(this.portOf('p'));
+      else if (m.type === 'loot') txt = '📦 Suprimentos · você ' + m.score.p + ' × ' + m.score.e + ' inimigo · meta ' + m.scoreLimit;
+      else { const pc = m.len ? Math.round(clamp((m.cargoT || 0) / m.len, 0, 1) * 100) : 0; txt = '🚢 Comboio ' + pc + '% · ❤ ' + m.lives; }
+      if (m.limit) { const left = Math.max(0, Math.round(m.limit - m.t)); txt += ' · ⏱ ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0'); }
     }
     if (txt !== this.objTxt) { this.objTxt = txt; el.textContent = txt; }
   },
@@ -1971,7 +2337,7 @@ const Battle = {
   /** armas de corpo a corpo: espinhos, serras, aríete, ganchos e choque (cada cliente aplica o dano só no seu navio) */
   meleeStep(dt) {
     for (const a of this.ships) {
-      if (a.sinking || a.dead || !a.meleeCells || !a.meleeCells.length) continue;
+      if (a.sinking || a.dead || a.dummy || !a.meleeCells || !a.meleeCells.length) continue;
       if (a.remote && a.seenT <= 0) continue;
       for (const m of a.meleeCells) if (m.top && m.top.mcd > 0) m.top.mcd -= dt;
       for (const b of this.ships) {
@@ -2102,9 +2468,11 @@ const Battle = {
         const a = rand(0, TAU), r = Math.sqrt(Math.random()) * 110, T = 0.12 + i * 0.09;
         this.shots.push({ kind: 'mortar', x: p.tx, y: p.ty, x0: p.tx, y0: p.ty, tx: p.tx + Math.cos(a) * r, ty: p.ty + Math.sin(a) * r, T, life: T, dmg: p.dmg, splash: p.splash, team: p.team, owner: p.owner });
       }
+      this.damageIslands(p.tx, p.ty, 110, p.dmg * 3, 'cluster');                 // as 6 ogivas juntas ferem a ilha
       return;
     }
     this.blast(p.tx, p.ty, p.splash, p.dmg, p.team, p.owner, wh === 'nuke' ? 'nuke' : wh === 'inc' ? 'inc' : wh === 'emp' ? 'emp' : 'ballistic', null, wh === 'nuke' ? false : undefined);
+    if (wh !== 'emp') this.damageIslands(p.tx, p.ty, p.splash, p.dmg, wh || 'ballistic');          // só mísseis balísticos destroem ilhas
   },
   /** ogivas especiais ao acertar uma célula */
   detonate(p, s, c) {
@@ -2143,7 +2511,8 @@ const Battle = {
   /** clarão e onda de uma explosão nuclear */
   nukeFx(x, y, r) {
     this.nukeT = 1; this.nukePos = { x, y, r };
-    for (let i = 0; i < 7; i++) this.explosion(x + rand(-r * 0.6, r * 0.6), y + rand(-r * 0.6, r * 0.6), rand(1.6, 3));
+    this.nukes.push({ x, y, r, t: 0, life: 13 });                                // cogumelo atômico (drawNukes)
+    for (let i = 0; i < 9; i++) this.explosion(x + rand(-r * 0.6, r * 0.6), y + rand(-r * 0.6, r * 0.6), rand(1.6, 3));
     for (let k = 0; k < 3; k++) this.addP({ t: 'ring', x, y, life: 1.2 + k * 0.3, s: 10, g: r * (1.4 - k * 0.3), layer: 0 });
     this.shake = Math.min(1, this.shake + 0.8 * clamp(1 - Math.hypot(x - this.player.x, y - this.player.y) / 1800, 0.1, 1));
   },
@@ -2167,8 +2536,134 @@ const Battle = {
         if (d < reach) hits.push([c, d]);
       }
       for (const [c, d] of hits) s.hitCell(c, dm * (1 - 0.6 * d / reach), true, owner, kind);
-      if ((kind === 'nuke' || kind === 'emp') && hits.length && !s.remote) { s.shield = 0; s.shieldHit = 6; s.stun(kind === 'nuke' ? 8 : 7); }      // zera o escudo e atordoa a tripulação
+      if ((kind === 'nuke' || kind === 'emp') && hits.length && !s.remote) { s.shield = 0; s.shieldHit = 6; s.stun(kind === 'nuke' ? 12 : 7); }      // zera o escudo e atordoa a tripulação
+      if (kind === 'nuke' && !s.remote && !s.dummy) {                                                    // onda de choque: arremessa o navio e incendeia as peças atingidas
+        const dx = s.x - x, dy = s.y - y, dd = Math.hypot(dx, dy) || 1, k = 560 * clamp(1 - dd / (radius * 1.7), 0, 1);
+        s.vx += dx / dd * k; s.vy += dy / dd * k;
+        for (const [c] of hits) if (!c.dead && Math.random() < 0.75) { c.fire = 8; c.fireBy = owner; }
+      }
       if (under && hits.length) s.breach(kind === 'torp' ? 1.2 : kind === 'mine' ? 1.0 : kind === 'mag' ? 2.2 : kind === 'nuke' ? 3 : 0.7);        // torpedo/mina/carga: rombo no casco
+    }
+    for (const port of this.ports) {                                                                     // portos inimigos também sofrem (cada explosão vale por várias peças)
+      if (port.dead || port.team === team) continue;
+      const d = Math.hypot(port.x - x, port.y - y);
+      if (d < radius + port.r) this.hitPort(port, dmg * (1 - 0.5 * clamp((d - port.r * 0.4) / (radius + port.r), 0, 1)), kind);
+    }
+    if (kind === 'nuke') for (const dr of this.drones) if (!dr.dead && !dr.remote && Math.hypot(dr.x - x, dr.y - y) < radius * 1.3) this.killDrone(dr, 'boom');
+  },
+
+  /* ------------------------------------------------------------------ ilhas destruídas (só por mísseis balísticos) e cogumelo atômico */
+  /** dano de um míssil balístico às ilhas: o nuclear vaporiza as ilhas inteiras no raio; os demais vão quebrando a ilha (cratera por cratera) */
+  damageIslands(x, y, R, dmg, wh) {
+    if (!this.islands.length) return;
+    for (const isl of this.islands.slice()) {
+      const d = Math.hypot(isl.x - x, isl.y - y);
+      if (d > R + isl.r) continue;
+      if (wh === 'nuke' && d < R + isl.r * 0.55) { this.destroyIsland(isl, true); continue; }
+      const f = clamp(1 - Math.max(0, d - isl.r * 0.4) / (R + isl.r), 0.1, 1);
+      isl.hp -= (wh === 'nuke' ? isl.mhp * 0.6 : dmg * 16 * (wh === 'ap' ? 1.6 : 1) * f);
+      if (inIsland(isl, x, y, R * 0.3)) { const cr = isl.craters || (isl.craters = []); cr.push([x - isl.x, y - isl.y, Math.max(16, R * 0.45)]); if (cr.length > 14) cr.shift(); }
+      if (isl.hp <= 0) this.destroyIsland(isl, false);
+    }
+  },
+  destroyIsland(isl, vaporize) {
+    const i = this.islands.indexOf(isl);
+    if (i < 0) return;
+    this.islands.splice(i, 1);                                                   // (é o mesmo vetor de map.islands)
+    this.miniKey = null;                                                         // refaz o fundo do minimapa
+    const n = vaporize ? 14 : 9;
+    for (let k = 0; k < n; k++) { const a = rand(0, TAU), r = Math.sqrt(Math.random()) * isl.r * 0.9; this.explosion(isl.x + Math.cos(a) * r, isl.y + Math.sin(a) * r, rand(1.2, 2.6)); }
+    for (let k = 0; k < 3; k++) this.addP({ t: 'ring', x: isl.x, y: isl.y, life: 1.2 + k * 0.3, s: 10, g: isl.r * (1.2 - k * 0.25), layer: 0 });
+    this.scars.push({ x: isl.x, y: isl.y, r: isl.r * 1.05, t: 0, life: 30 });
+    this.shake = Math.min(1, this.shake + 0.4);
+    if (this.inVision(isl.x, isl.y)) UI.banner('ILHA DESTRUÍDA', vaporize ? 'Vaporizada pela explosão nuclear' : 'Desabou sob os mísseis balísticos');
+  },
+  updateNukes(dt) {
+    for (const n of this.nukes) {
+      n.t += dt;
+      if (n.t < 6 && Math.random() < dt * 22) this.addP({ t: 'smoke', x: n.x + rand(-n.r * 0.5, n.r * 0.5), y: n.y + rand(-n.r * 0.5, n.r * 0.5), vx: rand(-25, 25), vy: rand(-25, 25), life: rand(1.5, 3), s: rand(10, 22), g: 14, a: 0.8 });
+    }
+    for (const s of this.scars) s.t += dt;
+    if (this.nukes.length && this.nukes.some(n => n.t > n.life)) this.nukes = this.nukes.filter(n => n.t <= n.life);
+    if (this.scars.length && this.scars.some(s => s.t > s.life)) this.scars = this.scars.filter(s => s.t <= s.life);
+  },
+  /** cogumelo atômico (vista lateral): bola de fogo, haste, chapéu, anel de condensação, poeira e ondas de choque */
+  drawNukes() {
+    const ctx = this.ctx, ease = k => 1 - Math.pow(1 - clamp(k, 0, 1), 3);
+    for (const s of this.scars) {                                                // água escura onde ficava uma ilha
+      const a = 0.28 * clamp(1 - s.t / s.life, 0, 1);
+      if (a <= 0.01 || Math.abs(s.x - this.cam.x) > this.W / this.zoom / 2 + s.r || Math.abs(s.y - this.cam.y) > this.H / this.zoom / 2 + s.r) continue;
+      const g = ctx.createRadialGradient(s.x, s.y, s.r * 0.3, s.x, s.y, s.r); g.addColorStop(0, `rgba(20,16,12,${a.toFixed(3)})`); g.addColorStop(1, 'rgba(20,16,12,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, TAU); ctx.fill();
+    }
+    for (const n of this.nukes) {
+      const t = n.t, R = n.r, fade = clamp((n.life - t) / 3.5, 0, 1);
+      if (Math.abs(n.x - this.cam.x) > this.W / this.zoom / 2 + R * 2.4 || Math.abs(n.y - this.cam.y) > this.H / this.zoom / 2 + R * 2.4) continue;
+      const k = ease(t / 6.5), H = R * 1.45 * k, cx = n.x, cy = n.y - H;                // altura do cogumelo e centro do chapéu
+      const rc = R * (0.18 + 0.4 * ease(t / 5.5)), sw = R * 0.17 * (1 + 0.25 * Math.sin(t * 2));
+      ctx.save();
+      // cicatriz no mar
+      ctx.fillStyle = `rgba(25,18,14,${(0.16 * fade * ease(t / 2)).toFixed(3)})`; ctx.beginPath(); ctx.arc(n.x, n.y, R * 0.42 * ease(t / 2), 0, TAU); ctx.fill();
+      // anel de poeira na base (elipse achatada)
+      const dk = ease(t / 3.2);
+      ctx.save(); ctx.translate(n.x, n.y); ctx.scale(1, 0.38);
+      const gd = ctx.createRadialGradient(0, 0, R * 0.15, 0, 0, R * 1.05 * dk + 1); gd.addColorStop(0, `rgba(140,118,100,${(0.55 * fade).toFixed(3)})`); gd.addColorStop(1, 'rgba(140,118,100,0)');
+      ctx.fillStyle = gd; ctx.beginPath(); ctx.arc(0, 0, R * 1.05 * dk + 1, 0, TAU); ctx.fill(); ctx.restore();
+      // haste: bolhas de fumaça empilhadas (laranja embaixo, cinza em cima)
+      const N = 16;
+      for (let i = 0; i <= N; i++) {
+        const u = i / N, y = n.y - H * u, w = sw * (1.55 - 0.6 * u) * (0.9 + 0.2 * Math.sin(t * 3 + i * 1.7)), x = n.x + Math.sin(t * 1.3 + i * 0.9) * w * 0.25;
+        const hot = clamp(1 - u * 1.3 - t * 0.07, 0, 1);
+        const g = ctx.createRadialGradient(x, y, 0, x, y, w * 1.5);
+        g.addColorStop(0, `rgba(${(125 + 130 * hot) | 0},${(108 + 50 * hot) | 0},${(98 - 40 * hot) | 0},${(0.9 * fade).toFixed(3)})`); g.addColorStop(0.6, `rgba(${(105 + 100 * hot) | 0},${(88 + 40 * hot) | 0},${(80 - 30 * hot) | 0},${(0.55 * fade).toFixed(3)})`); g.addColorStop(1, 'rgba(70,58,52,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, w * 1.5, 0, TAU); ctx.fill();
+      }
+      // chapéu: círculos de fumaça em elipse, girando (toro)
+      if (k > 0.08) {
+        const rx = rc * 1.45, ry = rc * 0.88, M = 22, fa = fade.toFixed(3);
+        // brilho laranja por baixo do chapéu (toro incandescente)
+        const gu = ctx.createRadialGradient(cx, cy + ry * 0.35, 0, cx, cy + ry * 0.35, rx);
+        gu.addColorStop(0, `rgba(255,170,80,${(0.75 * fade).toFixed(3)})`); gu.addColorStop(0.7, `rgba(210,90,30,${(0.45 * fade).toFixed(3)})`); gu.addColorStop(1, 'rgba(120,40,10,0)');
+        ctx.fillStyle = gu; ctx.beginPath(); ctx.ellipse(cx, cy + ry * 0.3, rx * 0.95, ry * 0.7, 0, 0, TAU); ctx.fill();
+        // cúpula sólida (cinza-amarronzada, mais clara no topo)
+        const gc = ctx.createRadialGradient(cx, cy - ry * 0.35, rc * 0.1, cx, cy - ry * 0.1, rx);
+        gc.addColorStop(0, `rgba(232,220,205,${fa})`); gc.addColorStop(0.55, `rgba(170,152,138,${fa})`); gc.addColorStop(0.88, `rgba(110,94,86,${(0.9 * fade).toFixed(3)})`); gc.addColorStop(1, 'rgba(80,66,60,0)');
+        ctx.fillStyle = gc; ctx.beginPath(); ctx.ellipse(cx, cy - ry * 0.12, rx, ry, 0, Math.PI, TAU); ctx.ellipse(cx, cy - ry * 0.12, rx, ry * 0.5, 0, 0, Math.PI); ctx.fill();
+        // bolhas de fumaça na borda dão o aspecto de couve-flor
+        for (let i = 0; i < M; i++) {
+          const a = i / M * TAU + t * 0.25, x = cx + Math.cos(a) * rx * 0.86, y = cy - ry * 0.12 + Math.sin(a) * ry * 0.78, rr = rc * (0.3 + 0.08 * Math.sin(i * 2.3 + t * 1.2));
+          const under = Math.sin(a) > 0.2;
+          const g = ctx.createRadialGradient(x, y, 0, x, y, rr);
+          g.addColorStop(0, under ? `rgba(255,160,75,${(0.55 * fade).toFixed(3)})` : `rgba(190,172,158,${(0.85 * fade).toFixed(3)})`); g.addColorStop(1, 'rgba(80,66,60,0)');
+          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, rr, 0, TAU); ctx.fill();
+        }
+        if (t < 5) {                                                               // núcleo incandescente
+          ctx.globalCompositeOperation = 'lighter';
+          const gh = ctx.createRadialGradient(cx, cy + rc * 0.1, 0, cx, cy + rc * 0.1, rc * 0.9), ha = clamp(1 - t / 5, 0, 1);
+          gh.addColorStop(0, `rgba(255,230,160,${(0.9 * ha).toFixed(3)})`); gh.addColorStop(0.5, `rgba(255,120,30,${(0.5 * ha).toFixed(3)})`); gh.addColorStop(1, 'rgba(255,60,0,0)');
+          ctx.fillStyle = gh; ctx.beginPath(); ctx.arc(cx, cy + rc * 0.1, rc * 0.9, 0, TAU); ctx.fill();
+          ctx.globalCompositeOperation = 'source-over';
+        }
+        if (t > 1 && t < 5) {                                                      // anel de condensação branco
+          ctx.strokeStyle = `rgba(245,248,255,${(0.5 * Math.sin((t - 1) / 4 * Math.PI) * fade).toFixed(3)})`; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.ellipse(n.x, n.y - H * 0.62, sw * 2.3, sw * 0.8, 0, 0, TAU); ctx.stroke();
+        }
+      }
+      // bola de fogo no chão e ondas de choque
+      ctx.globalCompositeOperation = 'lighter';
+      if (t < 2.4) {
+        const fr = R * (0.25 + 0.55 * ease(t / 0.9)), fa = clamp(1 - t / 2.4, 0, 1);
+        const gf = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, fr);
+        gf.addColorStop(0, `rgba(255,255,235,${fa.toFixed(3)})`); gf.addColorStop(0.35, `rgba(255,205,90,${(fa * 0.9).toFixed(3)})`); gf.addColorStop(0.7, `rgba(255,100,20,${(fa * 0.6).toFixed(3)})`); gf.addColorStop(1, 'rgba(255,60,0,0)');
+        ctx.fillStyle = gf; ctx.beginPath(); ctx.arc(n.x, n.y, fr, 0, TAU); ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+      for (const [dl, sc] of [[0, 1.75], [0.5, 1.35]]) {
+        const tt = t - dl; if (tt < 0 || tt > 3) continue;
+        ctx.strokeStyle = `rgba(255,240,220,${(0.6 * (1 - tt / 3)).toFixed(3)})`; ctx.lineWidth = 12 * (1 - tt / 3) + 2;
+        ctx.beginPath(); ctx.arc(n.x, n.y, R * sc * ease(tt / 3), 0, TAU); ctx.stroke();
+      }
+      ctx.restore();
     }
   },
 
@@ -2433,6 +2928,7 @@ const Battle = {
     for (const d of this.drones) if (!d.dead && (d.team === this.player.team || (this.inVision(d.x, d.y) && (!d.remote || (d.owner && d.owner.seenT > 0))))) this.drawDrone(d);
     for (const p of this.shots) if (p.kind !== 'torp' && shown(p)) this.drawShot(p);
     this.drawSmokes();
+    this.drawNukes();
     ctx.globalCompositeOperation = 'lighter';
     for (const f of this.flares) if (this.inVision(f.x, f.y) || f.team === meT) {
       const k = clamp(f.life / 2, 0, 1), g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, 16);
@@ -2525,6 +3021,17 @@ const Battle = {
       if (Math.abs(isl.x - this.cam.x) > vw + isl.r || Math.abs(isl.y - this.cam.y) > vh + isl.r) continue;
       const cv = this.islandSprite(isl), R = isl.cvR;
       ctx.drawImage(cv, isl.x - R, isl.y - R, R * 2, R * 2);
+      if (isl.hp < isl.mhp) {                                                        // ilha bombardeada: escurece e mostra crateras
+        const dm = clamp(1 - isl.hp / isl.mhp, 0, 1);
+        ctx.save(); ctx.beginPath(); isl.pts.forEach((p, i) => { if (i) ctx.lineTo(isl.x + p[0], isl.y + p[1]); else ctx.moveTo(isl.x + p[0], isl.y + p[1]); }); ctx.closePath(); ctx.clip();
+        ctx.fillStyle = `rgba(35,22,14,${(0.55 * dm).toFixed(3)})`; ctx.fillRect(isl.x - isl.r, isl.y - isl.r, isl.r * 2, isl.r * 2);
+        for (const c of isl.craters || []) {
+          const g = ctx.createRadialGradient(isl.x + c[0], isl.y + c[1], c[2] * 0.2, isl.x + c[0], isl.y + c[1], c[2]);
+          g.addColorStop(0, 'rgba(20,12,8,.9)'); g.addColorStop(0.7, 'rgba(50,28,16,.6)'); g.addColorStop(1, 'rgba(120,60,20,0)');
+          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(isl.x + c[0], isl.y + c[1], c[2], 0, TAU); ctx.fill();
+        }
+        ctx.restore();
+      }
       if (E.lava) {                                                                  // cratera brilhante (animada)
         const g = ctx.createRadialGradient(isl.x, isl.y, 2, isl.x, isl.y, isl.rc * 0.5);
         g.addColorStop(0, 'rgba(255,200,80,' + (0.7 + 0.2 * Math.sin(t * 3 + isl.v)).toFixed(2) + ')'); g.addColorStop(1, 'rgba(255,60,0,0)');
@@ -2560,6 +3067,72 @@ const Battle = {
       ctx.strokeStyle = 'rgba(255,214,102,.8)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(e[0], e[1], 150, 0, TAU); ctx.stroke();
       ctx.font = '700 26px "Segoe UI", sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd666'; ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 4; ctx.strokeText('🏁 DESTINO', e[0], e[1] + 9); ctx.fillText('🏁 DESTINO', e[0], e[1] + 9);
     }
+    this.drawPorts(ctx, mine);
+    for (const c of this.crates) this.drawCrate(ctx, c);
+    for (const f of this.flags) this.drawFlag(ctx, f, mine);
+  },
+
+  /** porto: doca de concreto com prédios, torres de defesa, bandeira do time e barra de vida */
+  drawPorts(ctx, mine) {
+    const t = this.time;
+    for (const p of this.ports) {
+      if (Math.abs(p.x - this.cam.x) > this.W / this.zoom / 2 + p.r * 2 || Math.abs(p.y - this.cam.y) > this.H / this.zoom / 2 + p.r * 2) continue;
+      const own = p.team === mine, col = own ? '95,224,138' : '255,93,93', R = p.r;
+      ctx.save(); ctx.translate(p.x, p.y);
+      ctx.fillStyle = `rgba(${col},0.07)`; ctx.beginPath(); ctx.arc(0, 0, R + 30, 0, TAU); ctx.fill();            // área de reparo
+      ctx.strokeStyle = `rgba(${col},.55)`; ctx.lineWidth = 3; ctx.setLineDash([16, 12]); ctx.lineDashOffset = -t * 10; ctx.beginPath(); ctx.arc(0, 0, R + 30, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+      if (p.dead) {                                                                                                 // escombros
+        ctx.fillStyle = '#2a2724'; ctx.beginPath(); ctx.arc(0, 0, R * 0.7, 0, TAU); ctx.fill();
+        for (let i = 0; i < 8; i++) { ctx.fillStyle = i % 2 ? '#4a423c' : '#1e1a17'; ctx.fillRect(Math.cos(i * 2.4) * R * 0.45 - 9, Math.sin(i * 2.4) * R * 0.45 - 6, 18, 12); }
+        ctx.restore(); continue;
+      }
+      ctx.fillStyle = '#6f7b88'; ctx.beginPath(); ctx.arc(0, 0, R * 0.78, 0, TAU); ctx.fill();                      // doca
+      ctx.fillStyle = '#8d99a6'; ctx.beginPath(); ctx.arc(0, 0, R * 0.7, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(30,40,50,.45)'; ctx.lineWidth = 2;
+      for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(i * TAU / 6) * R * 0.7, Math.sin(i * TAU / 6) * R * 0.7); ctx.stroke(); }
+      for (const [bx, by, bw, bh] of [[-0.3, -0.25, 0.3, 0.22], [0.05, -0.3, 0.26, 0.28], [-0.25, 0.1, 0.34, 0.2], [0.12, 0.12, 0.22, 0.24]]) {      // armazéns
+        ctx.fillStyle = '#5c6772'; ctx.fillRect(bx * R, by * R, bw * R, bh * R);
+        ctx.fillStyle = `rgba(${col},.85)`; ctx.fillRect(bx * R, by * R, bw * R, 5);
+      }
+      ctx.fillStyle = '#d9dfe6'; ctx.fillRect(-2, -R * 0.55, 4, R * 0.55);                                           // mastro e bandeira
+      const wv = Math.sin(t * 4) * 4;
+      ctx.fillStyle = `rgb(${col})`; poly(ctx, [[2, -R * 0.55], [2 + 38, -R * 0.55 + 9 + wv], [2, -R * 0.55 + 20]]); ctx.fill();
+      for (const tr of p.turrets) {                                                                                   // torres
+        const tx = Math.cos(tr.a) * R * 0.62, ty = Math.sin(tr.a) * R * 0.62;
+        ctx.fillStyle = '#3d4753'; ctx.beginPath(); ctx.arc(tx, ty, 12, 0, TAU); ctx.fill();
+        ctx.save(); ctx.translate(tx, ty); ctx.rotate(tr.ang); ctx.fillStyle = '#1f252d'; ctx.fillRect(-2.5, -20, 5, 20); ctx.restore();
+      }
+      if (p.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${Math.min(0.5, p.flash * 3)})`; ctx.beginPath(); ctx.arc(0, 0, R * 0.78, 0, TAU); ctx.fill(); }
+      const k = clamp(p.hp / p.max, 0, 1), w = 170;                                                                   // barra de vida
+      ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(-w / 2 - 2, -R - 42, w + 4, 12);
+      ctx.fillStyle = p.safe ? '#7fb8ff' : k > 0.5 ? `rgb(${col})` : k > 0.25 ? '#f5b942' : '#ff3b3b'; ctx.fillRect(-w / 2, -R - 40, w * (p.safe ? 1 : k), 8);
+      ctx.font = '700 18px "Segoe UI", sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = `rgb(${col})`; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 4;
+      const lbl = (own ? '⚓ SEU PORTO' : '⚓ PORTO INIMIGO') + (p.safe ? '' : ' · ' + Math.ceil(p.hp)); ctx.strokeText(lbl, 0, -R - 48); ctx.fillText(lbl, 0, -R - 48);
+      ctx.restore();
+    }
+  },
+  drawFlag(ctx, f, mine) {
+    if (f.state === 'home' && !this.ports.length) return;
+    const own = f.team === mine, col = own ? '#5fe08a' : '#ff5d5d', wv = Math.sin(this.time * 6 + (f.x || 0)) * 4;
+    ctx.save(); ctx.translate(f.x, f.y - (f.state === 'carried' ? 26 : 0));
+    if (f.state === 'dropped') { ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.arc(0, 26, 40 + 6 * Math.sin(this.time * 5), 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
+    ctx.strokeStyle = '#e8edf2'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 26); ctx.lineTo(0, -8); ctx.stroke();
+    ctx.fillStyle = col; poly(ctx, [[0, -8], [30, 0 + wv], [0, 10]]); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.restore();
+  },
+  drawCrate(ctx, c) {
+    if (Math.abs(c.x - this.cam.x) > this.W / this.zoom / 2 + 60 || Math.abs(c.y - this.cam.y) > this.H / this.zoom / 2 + 60) return;
+    const bob = Math.sin(this.time * 2.4 + c.x) * 3, gold = c.kind === 'gold', rep = c.kind === 'repair';
+    ctx.save(); ctx.translate(c.x, c.y + bob);
+    ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.ellipse(5, 9, 16, 9, 0, 0, TAU); ctx.fill();
+    const g = ctx.createRadialGradient(0, 0, 4, 0, 0, 34); g.addColorStop(0, gold ? 'rgba(255,214,102,.5)' : rep ? 'rgba(123,240,168,.4)' : 'rgba(255,255,255,.22)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 34, 0, TAU); ctx.fill();
+    ctx.fillStyle = gold ? '#c9962a' : rep ? '#2f7d4d' : '#8a5a2b'; ctx.fillRect(-13, -13, 26, 26);
+    ctx.fillStyle = gold ? '#ffd166' : rep ? '#5fcf8c' : '#b9823e'; ctx.fillRect(-11, -11, 22, 22);
+    ctx.strokeStyle = 'rgba(40,24,10,.55)'; ctx.lineWidth = 1.5; ctx.strokeRect(-11, -11, 22, 22); ctx.beginPath(); ctx.moveTo(-11, 0); ctx.lineTo(11, 0); ctx.moveTo(0, -11); ctx.lineTo(0, 11); ctx.stroke();
+    if (rep) { ctx.fillStyle = '#fff'; ctx.fillRect(-2.5, -8, 5, 16); ctx.fillRect(-8, -2.5, 16, 5); }
+    if (gold) { ctx.fillStyle = '#fff6d0'; ctx.font = '700 12px "Segoe UI", sans-serif'; ctx.textAlign = 'center'; ctx.fillText('3', 0, 4); }
+    ctx.restore();
   },
 
   /** névoa, chuva, raios e escuridão do ambiente */
@@ -2856,6 +3429,12 @@ const Battle = {
         c.beginPath(); c.arc((zn.x + HALF) * k, (zn.y + HALF) * k, zn.r * k, 0, TAU); c.stroke();
       });
     }
+    for (const p of this.ports) {                                      // portos
+      const x = (p.x + HALF) * k, y = (p.y + HALF) * k, own = p.team === this.player.team;
+      c.fillStyle = p.dead ? '#555' : own ? '#5fe08a' : '#ff5d5d'; c.fillRect(x - 5, y - 5, 10, 10); c.strokeStyle = '#fff'; c.lineWidth = 1; c.strokeRect(x - 5, y - 5, 10, 10);
+    }
+    for (const f of this.flags) { const x = (f.x + HALF) * k, y = (f.y + HALF) * k; c.fillStyle = f.team === this.player.team ? '#5fe08a' : '#ff5d5d'; c.beginPath(); c.moveTo(x, y - 6); c.lineTo(x + 7, y - 3); c.lineTo(x, y); c.closePath(); c.fill(); c.fillRect(x - 1, y - 6, 1.5, 9); }
+    for (const cr of this.crates) { c.fillStyle = cr.kind === 'gold' ? '#ffd166' : cr.kind === 'repair' ? '#7bf0a8' : '#d9a05b'; c.fillRect((cr.x + HALF) * k - 2, (cr.y + HALF) * k - 2, 4, 4); }
     for (const o of this.obs) {                                       // círculos de visão
       c.fillStyle = 'rgba(120,200,255,.10)'; c.strokeStyle = 'rgba(120,200,255,.35)'; c.lineWidth = 1;
       c.beginPath(); c.arc((o.x + HALF) * k, (o.y + HALF) * k, o.vision * k, 0, TAU); c.fill(); c.stroke();

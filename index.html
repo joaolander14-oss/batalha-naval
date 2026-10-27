@@ -65,6 +65,7 @@
       <div id="stats-body"></div>
       <div id="messages"></div>
       <button class="btn primary big" id="btn-battle">⚔ Ir para a batalha</button>
+      <button class="btn big" id="btn-sandbox" title="Mar vazio com alvos parados para testar armas e contramedidas (ignora o orçamento)">🎯 Campo de testes</button>
       <div class="row-tools">
         <button class="btn small" id="btn-export">📋 Copiar código</button>
         <button class="btn small" id="btn-import">📥 Colar código</button>
@@ -187,9 +188,9 @@
   <canvas id="game"></canvas>
 
   <div class="hud top">
-    <div class="pill camp">🌊 Onda <b id="hud-wave">1</b></div>
+    <div class="pill camp sbhide">🌊 Onda <b id="hud-wave">1</b></div>
     <div class="pill camp">☠ Inimigos <b id="hud-enemies">0</b></div>
-    <div class="pill camp">🪙 <b id="hud-coins">0</b></div>
+    <div class="pill camp sbhide">🪙 <b id="hud-coins">0</b></div>
     <div class="pill obj" id="hud-obj"></div>
   </div>
 
@@ -247,6 +248,23 @@
   </div>
   <div id="rotate-hint" class="rotate-hint">↻ Gire o celular para o modo paisagem</div>
 
+  <!-- campo de testes: alvos parados para testar armas e contramedidas -->
+  <div id="sandbox">
+    <button class="btn small" id="sb-toggle" title="Abrir/fechar o painel (tecla T)">🎯 Testes (T)</button>
+    <div id="sb-panel" class="sb-panel">
+      <label class="field">Alvo <select id="sb-model"></select></label>
+      <label class="field">Distância: <b id="sb-dist-val">450</b><input type="range" id="sb-dist" min="150" max="1500" step="50" value="450"></label>
+      <label class="field">Posição do alvo <select id="sb-face"><option value="bow">Proa virada para você</option><option value="side">De lado</option><option value="stern">Popa virada para você</option></select></label>
+      <div class="sb-row"><button class="btn small primary" id="sb-add">+ 1 alvo</button><button class="btn small" id="sb-row5">+ 5 em fila</button></div>
+      <div class="sb-row"><button class="btn small" id="sb-rebuild">♻ Reconstruir alvos</button><button class="btn small" id="sb-clear">🗑 Remover todos</button></div>
+      <div class="sb-row"><button class="btn small" id="sb-me">🔧 Reparar meu navio</button><button class="btn small" id="sb-meter">⏱ Zerar medidor</button></div>
+      <label class="chk"><input type="checkbox" id="sb-regen" checked> Reconstruir alvo ao afundar</label>
+      <label class="chk"><input type="checkbox" id="sb-reveal" checked> Alvos sempre detectados</label>
+      <div id="sb-stats" class="sb-stats"></div>
+      <p class="muted">Os alvos ficam parados e não atiram. Defesas (defesa pontual, flares, chaff, escudo, fumaça…) funcionam normalmente. Mire com o mouse: o alvo aparece na direção do cursor.</p>
+    </div>
+  </div>
+
   <div id="banner" class="banner hidden"><h2></h2><p></p></div>
 
   <div id="overlay" class="overlay hidden">
@@ -283,11 +301,13 @@
         <label class="field">Aliados (bots do seu time) <select id="bots-allies"><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
       </div>
       <p class="muted" id="bots-mode-desc"></p>
+      <h3 class="sub" id="bots-opts-title">Personalizar o modo</h3>
+      <div id="bots-opts" class="grid3"></div>
       <h3 class="sub">Inimigos da partida: monte a sua batalha</h3>
       <div id="bots-skirm" class="steppers"></div>
       <p class="muted" id="bots-sum"></p>
     </div>
-    <div class="btns row"><button class="btn primary big" id="bots-skirm-start">⚔ Iniciar partida</button><button class="btn big" id="bots-close">Fechar</button></div>
+    <div class="btns row"><button class="btn primary big" id="bots-skirm-start">⚔ Iniciar partida</button><button class="btn big" id="bots-sandbox" title="Mar vazio com alvos parados para testar armas e contramedidas">🎯 Campo de testes</button><button class="btn big" id="bots-close">Fechar</button></div>
   </div>
 </div>
 <div id="modal-opts" class="modal hidden">

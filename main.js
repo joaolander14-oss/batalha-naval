@@ -86,6 +86,34 @@ function startCampaign() {
   Battle.start(Builder.getDesign(), Meta.bots.startWave || 1);
 }
 
+/** Campo de testes: mar vazio com alvos parados. Ignora o orçamento (só exige um navio estruturalmente válido). */
+function startSandbox() {
+  const d = Builder.getDesign(), v = validateDesign(d, 0);
+  if (!v.ok) { alert('Corrija o navio antes de entrar no campo de testes:\n' + v.error); return; }
+  UI.show('battle');
+  Touch.show(true);
+  Battle.start(d, 1, { sandbox: true });
+}
+
+/** opções que cada modo de partida mostra na janela de Bots */
+const ALL_OBJ = ['zone', 'convoy', 'port', 'flag', 'defend', 'loot'], OFF_ON = [[false, 'Desligado'], [true, 'Ligado']];
+const MODE_FIELDS = [
+  { k: 'minutes', label: 'Duração da partida', modes: ['zone', 'convoy', 'port', 'flag', 'loot'], opts: [[0, 'Sem limite'], [3, '3 min'], [5, '5 min'], [8, '8 min'], [12, '12 min'], [20, '20 min'], [30, '30 min']] },
+  { k: 'score', label: 'Pontos para vencer', modes: ['zone'], opts: [[100, '100'], [200, '200'], [300, '300'], [500, '500']] },
+  { k: 'zones', label: 'Número de zonas', modes: ['zone'], opts: [[1, '1'], [2, '2'], [3, '3'], [4, '4'], [5, '5']] },
+  { k: 'lives', label: 'Vidas do cargueiro', modes: ['convoy'], opts: [[1, '1'], [2, '2'], [3, '3'], [5, '5'], [8, '8']] },
+  { k: 'portHp', label: 'Vida dos portos', modes: ['port', 'defend'], opts: [[0.5, '0,5×'], [1, '1× (1500)'], [2, '2×'], [3, '3×'], [5, '5×']] },
+  { k: 'turrets', label: 'Torres de cada porto', modes: ['port', 'flag', 'defend'], opts: [[0, 'Nenhuma'], [1, '1'], [2, '2'], [3, '3'], [4, '4'], [6, '6']] },
+  { k: 'flags', label: 'Capturas para vencer', modes: ['flag'], opts: [[1, '1'], [2, '2'], [3, '3'], [5, '5'], [10, '10']] },
+  { k: 'waves', label: 'Número de ondas', modes: ['defend'], opts: [[3, '3'], [5, '5'], [6, '6'], [8, '8'], [12, '12'], [20, '20']] },
+  { k: 'crates', label: 'Caixas ao mesmo tempo', modes: ['loot'], opts: [[6, '6'], [10, '10'], [16, '16'], [24, '24']] },
+  { k: 'lootScore', label: 'Pontos para vencer', modes: ['loot'], opts: [[10, '10'], [25, '25'], [40, '40'], [60, '60']] },
+  { k: 'respawn', label: 'Reaparecer após afundar', modes: ALL_OBJ, opts: [[3, '3 s'], [5, '5 s'], [8, '8 s'], [12, '12 s'], [20, '20 s']] },
+  { k: 'arena', label: 'Tamanho do mapa', modes: ALL_OBJ, opts: [[2400, 'Pequeno'], [3600, 'Médio'], [5000, 'Grande']] },
+  { k: 'fog', label: 'Névoa de guerra', modes: ALL_OBJ, opts: [[true, 'Ligada'], [false, 'Desligada']] },
+  { k: 'ff', label: 'Fogo amigo', modes: ALL_OBJ, opts: OFF_ON },
+];
+
 /* ---------------------------------------------------------------- janela de Bots */
 const DIFF_DESC = {
   facil: 'Erram bastante, recarregam devagar e enxergam menos longe.',
@@ -103,13 +131,25 @@ function openBots() {
   $('bots-wave').innerHTML = Array.from({ length: 20 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('');
   $('bots-wave').value = String(B.startWave);
   const showDesc = () => { $('bots-diff-desc').textContent = DIFF_DESC[B.diff] || ''; };
-  const MODE_DESC = { '': 'Escaramuça: você contra os bots escolhidos abaixo.', zone: 'Controle de Zona: segure as 3 zonas com seu time (você + aliados) para pontuar. Quem afunda renasce depois de alguns segundos.', convoy: 'Comboio: escolte o cargueiro (ele só anda com escolta por perto) até o destino. Se ele afundar, renasce no último ponto de controle; há 3 vidas.' };
+  $('bots-mode').innerHTML = Object.keys(MODE_INFO).map(k => `<option value="${k}">${MODE_INFO[k].name}</option>`).join('');
+  $('bots-mode').value = B.mode || '';
+  const buildOpts = () => {                                                 // opções de cada modo (só aparecem as que valem para o modo escolhido)
+    const md = B.mode || '', box = $('bots-opts');
+    const fields = MODE_FIELDS.filter(f => f.modes.includes(md));
+    $('bots-opts-title').style.display = box.style.display = fields.length ? '' : 'none';
+    box.innerHTML = fields.map(f => `<label class="field">${f.label} <select data-k="${f.k}">${f.opts.map(([v, t]) => `<option value="${v}" ${String(B.opts[f.k]) === String(v) ? 'selected' : ''}>${t}</option>`).join('')}</select></label>`).join('');
+    box.querySelectorAll('select').forEach(sel => sel.onchange = () => {
+      const d = MODE_OPTS_DEFAULT[sel.dataset.k];
+      B.opts[sel.dataset.k] = typeof d === 'boolean' ? sel.value === 'true' : +sel.value; Meta.save();
+    });
+  };
   const sum = () => {
     const tot = Object.values(B.skirmish).reduce((a, b) => a + b, 0), md = B.mode || '';
-    $('bots-mode-desc').textContent = MODE_DESC[md];
-    $('bots-sum').textContent = md ? `${md === 'zone' ? 'Controle de Zona' : 'Comboio'}: ${tot ? tot + ' inimigo(s) escolhido(s)' : 'inimigos automáticos'} · ${B.allies} aliado(s) · ${BOT_DIFFS[B.diff].name}`
+    $('bots-mode-desc').textContent = MODE_INFO[md].desc;
+    $('bots-sum').textContent = md ? `${MODE_INFO[md].name}: ${md === 'defend' ? 'ondas automáticas' : tot ? tot + ' inimigo(s) escolhido(s)' : 'inimigos automáticos'} · ${B.allies} aliado(s) · ${BOT_DIFFS[B.diff].name}`
       : (tot ? `Escaramuça: ${tot} bot(s) · ${BOT_DIFFS[B.diff].name}` : 'Escaramuça: adicione ao menos 1 bot.');
     $('bots-skirm-start').disabled = !md && !tot;
+    buildOpts();
   };
   const buildAllowed = () => {
     $('bots-allowed').innerHTML = pool.map(p => `<label class="chk"><input type="checkbox" data-id="${p.id}" ${!B.allowed || B.allowed.includes(p.id) ? 'checked' : ''}> ${p.name} ${p.power ? `<small>poder ${p.power}</small>` : ''}</label>`).join('');
@@ -136,11 +176,12 @@ function openBots() {
   $('bots-all').onclick = () => { B.allowed = null; Meta.save(); buildAllowed(); };
   $('bots-none').onclick = () => { B.allowed = []; Meta.save(); buildAllowed(); };
   $('bots-close').onclick = () => modal.classList.add('hidden');
+  $('bots-sandbox').onclick = () => { modal.classList.add('hidden'); startSandbox(); };
   $('bots-skirm-start').onclick = () => {
     const r = Builder.analyze();
     if (!r.ok) { alert('Corrija o navio antes de lutar:\n' + r.errors.join('\n')); return; }
     modal.classList.add('hidden'); UI.show('battle'); Touch.show(true);
-    Battle.start(Builder.getDesign(), 1, { counts: Object.assign({}, B.skirmish), diff: B.diff, wave: 6, mode: B.mode || '', allies: B.allies });
+    Battle.start(Builder.getDesign(), 1, { counts: Object.assign({}, B.skirmish), diff: B.diff, wave: 6, mode: B.mode || '', allies: B.allies, opts: Object.assign({}, B.opts) });
   };
   showDesc(); buildAllowed(); buildSkirm(); sum();
   modal.classList.remove('hidden');
@@ -165,6 +206,7 @@ window.addEventListener('DOMContentLoaded', () => {
   Builder.init(renderStats);
   refreshHeader();
   $('btn-battle').onclick = startCampaign;
+  $('btn-sandbox').onclick = startSandbox;
   $('btn-online').onclick = () => Online.show();
   $('btn-bots').onclick = openBots;
   $('btn-opts').onclick = openOpts;

@@ -459,7 +459,7 @@ function onMessage(p, raw) {
       if (m.wh === 'nuke' && !(p.stats && p.stats.nukes)) return;
       const sh = { t: 'shot', kind: m.kind, id: clean(m.id, 24), owner: p.id, team: p.team,
         x: +m.x, y: +m.y, vx: num(m.vx, -1500, 1500), vy: num(m.vy, -1500, 1500), life: num(m.life, 0, 14), dmg: num(m.dmg, 0, 60),
-        pierce: num(m.pierce, 0, 4), big: !!m.big, splash: num(m.splash, 0, 260), turn: num(m.turn, 0, 4), ang: num(m.ang, -50, 50), speed: num(m.speed, 0, 1200),
+        pierce: num(m.pierce, 0, 4), big: !!m.big, splash: num(m.splash, 0, 420), turn: num(m.turn, 0, 4), ang: num(m.ang, -50, 50), speed: num(m.speed, 0, 1200),
         tx: num(m.tx, -4000, 4000), ty: num(m.ty, -4000, 4000), T: num(m.T, 0, 14), x0: num(m.x0, -4000, 4000), y0: num(m.y0, -4000, 4000), tg: clean(m.tg, 12),
         fuse: num(m.fuse, 0, 4), dmgSurf: num(m.dmgSurf, 0, 16), arm: num(m.arm, 0, 6),
         lk: LOCK_KINDS.includes(m.lk) ? m.lk : '', wh: WARHEADS.includes(m.wh) ? m.wh : '', sz: ['S', 'M', 'L', 'G'].includes(m.sz) ? m.sz : '', gx: num(m.gx, -4000, 4000), gy: num(m.gy, -4000, 4000) };

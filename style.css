@@ -274,3 +274,19 @@ body.touch .host-btn { left: 62px; top: 10px; }
 #screen-battle.objmode .camp { display: none; }
 #touch .tbtn.ball { right: calc(122px + env(safe-area-inset-right)); bottom: calc(262px + env(safe-area-inset-bottom)); background: rgba(255,214,102,.22); border-color: rgba(255,214,102,.8); }
 #touch .tbtn.ball.hidden { display: none; }
+
+/* v2.0: campo de testes (alvos parados) */
+#sandbox { display: none; position: absolute; top: 58px; right: 12px; z-index: 9; width: 262px; text-align: right; }
+#screen-battle.sandbox #sandbox { display: block; }
+#screen-battle.sandbox .sbhide { display: none; }
+#btn-sandbox { margin-top: 8px; width: 100%; }
+.sb-panel { box-sizing: border-box; overflow-x: hidden; margin-top: 6px; text-align: left; background: rgba(8,24,44,.9); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; backdrop-filter: blur(4px); max-height: calc(100vh - 330px); overflow-y: auto; }
+.sb-panel.closed { display: none; }
+.sb-panel .field { margin-bottom: 7px; }
+.sb-panel .field input[type=range] { padding: 0; }
+.sb-panel .chk { margin-bottom: 6px; }
+.sb-panel .muted { font-size: .72rem; margin: 6px 0 0; }
+.sb-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.sb-row .btn { flex: 1; padding: 6px 4px; font-size: .78rem; }
+.sb-stats { background: #0c2038; border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; font-size: .82rem; line-height: 1.5; margin: 4px 0; }
+.sb-stats b { color: var(--accent); }

@@ -1,5 +1,25 @@
 # Changelog
 
+## v2.1.0 — Campo de testes, nuclear com cogumelo, ilhas destrutíveis e novos modos
+**Míssil balístico nuclear (buff)**
+- Raio **260 → 380**, dano **40 → 60**, recarga **90 s → 70 s**, atordoamento **8 → 12 s**. Agora também **arremessa os navios** para longe, incendeia 75% das peças atingidas e derruba drones no raio.
+- **Animação do cogumelo atômico** (bola de fogo, haste, chapéu com brilho incandescente, anel de condensação, poeira e ondas de choque) que dura cerca de 13 s.
+**Ilhas destrutíveis**
+- **Só mísseis balísticos destroem ilhas.** Cada ilha tem vida proporcional ao tamanho: os balísticos abrem crateras e escurecem a ilha até ela desabar; **o nuclear vaporiza ilhas inteiras** no raio. O MIRV fere a ilha com as 6 ogivas juntas. Tiros, torpedos, mísseis de cruzeiro e morteiros continuam parando na ilha sem machucá-la. A ilha some do mapa e do minimapa e deixa uma mancha escura na água.
+**4 modos de partida novos** (contra bots, com aliados; online fica para uma próxima versão)
+- **Ataque ao Porto:** cada time tem um porto com vida e torres de defesa. Destrua o porto inimigo: tiros comuns causam pouco dano, explosões bem mais e **balísticos arrasam**. Navios do dono se reparam dentro do porto. Metade dos bots ataca e metade defende.
+- **Capturar a Bandeira:** roube a bandeira do porto inimigo e leve ao seu porto (a sua precisa estar em casa). Quem carrega fica 15% mais lento; ao afundar a bandeira cai e volta sozinha depois de 20 s, ou na hora se um aliado encostar.
+- **Defesa do Porto:** ondas de bots atacam o seu porto; os aliados protegem. Vença todas as ondas.
+- **Corrida de Suprimentos:** caixas aparecem pelo mar (dourada vale 3, verde repara o navio). Primeiro time à meta vence.
+**Mais personalização dos modos** (janela 🤖 Bots → Modo da partida)
+- Para todos: **duração** (sem limite a 30 min), **reaparecimento** (3 a 20 s), **tamanho do mapa** (pequeno, médio, grande), **névoa de guerra** e **fogo amigo**.
+- Por modo: pontos para vencer e **número de zonas (1 a 5)** no Controle de Zona, vidas do cargueiro no Comboio, **vida dos portos e torres** (0 a 6) nos modos de porto, capturas para vencer, número de ondas, caixas simultâneas e pontos de suprimentos.
+**Campo de testes**
+- Novo modo **🎯 Campo de testes** (botão no estaleiro e na janela de Bots): mar aberto, sem névoa e sem fim de partida, para testar armas e contramedidas. Ignora o orçamento do estaleiro.
+- **Alvos parados** que não atiram e não se movem (nem empurrados): 9 alvos de teste (leve, comum, blindado, com escudos, com defesas pontuais, com todas as contramedidas, furtivo, com motores para mísseis térmicos e submarino imerso) mais qualquer modelo de bot e o clone do seu navio. Defesas dos alvos (defesa pontual, flares, chaff, escudo, fumaça…) funcionam normalmente.
+- Painel (tecla **T**): escolher o alvo, a distância (150–1500) e a posição (proa, lado ou popa virada para você); **+1 alvo** na direção do cursor, **+5 em fila**, reconstruir alvos, remover todos, reparar o seu navio e opções de reconstruir ao afundar e de deixar os alvos sempre detectados (desligue para testar sensores e furtividade).
+- **Medidor de dano**: dano total causado, DPS dos últimos 5 s e pico (conta vida do casco, das peças e escudo). Se o seu navio afundar, ele renasce sozinho no centro.
+
 ## v2.0.0 — morteiros, aletas, sensores, avarias, apoio e contramedidas
 **11 morteiros novos** (todos giram, miram no cursor e passam por cima de tudo)
 - **Leve**, **Duplo** (2 granadas), **de Rajada** (4 granadas espalhadas), **de Fogo Rápido**, **de Longo Alcance** (1400), **de Cerco** (dano enorme em ponto), **Incendiário** (napalm), **de Fragmentação** (5 submunições), **Eletromagnético** (zera escudo, atordoa 7 s), **de Fumaça** (nuvem de 125 de raio por 17 s) e **Lança-minas** (a granada vira uma mina invisível). A IA não usa fumaça nem minas.

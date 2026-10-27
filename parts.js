@@ -9,7 +9,7 @@
    A proa (frente) do navio aponta para CIMA da grade.
    ===================================================================== */
 
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 const GRID_W = 13;
 const GRID_H = 17;
 const BASE_BUDGET = 220;
@@ -254,7 +254,7 @@ for (const code in BALLISTIC_CODES) {
   const sz = BALLISTIC_CODES[code], S = BALLISTIC_SIZES[sz];
   PARTS[code] = { layer: 'top', kind: 'ballistic', size: sz, name: 'Míssil Balístico ' + S.label, cost: S.cost, hp: S.hp, mass: S.mass,
     dmg: S.dmg, splash: S.splash, reload: S.reload, speed: 420, range: 3600, minRange: 300, scatter: 36,
-    desc: 'Marque uma região no MINIMAPA (clique/toque) e lance com a tecla B (ou o botão 🎯). Voa em arco por cima de tudo (nada o intercepta), leva alguns segundos e cai com explosão enorme (' + S.splash + ' de raio) — o inimigo vê o alerta. Mais impreciso à distância.' };
+    desc: 'Marque uma região no MINIMAPA (clique/toque) e lance com a tecla B (ou o botão 🎯). Voa em arco por cima de tudo (nada o intercepta), leva alguns segundos e cai com explosão enorme (' + S.splash + ' de raio) — o inimigo vê o alerta. Mais impreciso à distância. É a ÚNICA arma que destrói ilhas e arrasa portos.' };
 }
 PARTS['ο'] = { layer: 'top', kind: 'flare', name: 'Lançador de Flares', cost: 18, hp: 2, mass: 0.9, reload: 7, salvo: 4, life: 4.5, range: 360,
   desc: 'Defesa automática: quando um míssil térmico se aproxima, lança iscas quentes que o desviam. Vários lançadores = mais salvas.' };
@@ -289,8 +289,8 @@ LOCKS.acoustic = { name: 'Acústico', col: '#7fe3ff', cost: 0, turn: 0,
   desc: 'Ouve o ruído dos motores: trava no navio mais barulhento (até em submarinos que você não enxerga). Navio parado, silencioso ou furtivo é difícil de ouvir.' };
 /** mísseis balísticos especiais (o nuclear só existe como balístico) */
 const SPECIAL_BALLISTICS = {
-  'Γ': { name: 'Míssil Balístico Nuclear', size: 'G', wh: 'nuke', nuke: true, cost: 320, hp: 5, mass: 8, dmg: 40, splash: 260, reload: 90, minRange: 600,
-    desc: 'Ogiva nuclear: explosão de 260 de raio que incendeia tudo, atordoa a tripulação, zera escudos e cega a tela com um clarão. Recarrega em 90 s. O anfitrião pode proibir.' },
+  'Γ': { name: 'Míssil Balístico Nuclear', size: 'G', wh: 'nuke', nuke: true, cost: 320, hp: 5, mass: 8, dmg: 60, splash: 380, reload: 70, minRange: 600,
+    desc: 'Ogiva nuclear: explosão de 380 de raio com cogumelo atômico. Incendeia quase tudo, atordoa a tripulação por 12 s, zera escudos, derruba drones, arremessa os navios para longe e cega a tela com um clarão. VAPORIZA ilhas inteiras e arrasa portos. Recarrega em 70 s. O anfitrião pode proibir.' },
   'Δ': { name: 'Míssil Balístico MIRV', size: 'M', wh: 'cluster', cost: 130, hp: 4, mass: 5, dmg: 5, splash: 40, reload: 28,
     desc: 'Cabeça múltipla: cai em 6 ogivas espalhadas por uma área de 110 de raio. Ótimo contra frotas.' },
   'Ξ': { name: 'Míssil Balístico Incendiário', size: 'M', wh: 'inc', cost: 100, hp: 4, mass: 4.5, dmg: 4, splash: 130, reload: 24,
@@ -1557,15 +1557,24 @@ function freeOfIslands(map, x, y, pad) {
 }
 
 /** gera o mapa (determinístico pela semente: cliente e servidor chegam ao mesmo resultado) */
-function genMap(seed, size, env, level, mode) {
+function genMap(seed, size, env, level, mode, opts) {
   const B = BIOMES[env] || BIOMES.oceano, H = size / 2, rnd = mulberry32((seed | 0) || 1);
-  const map = { seed: seed | 0, size, env: BIOMES[env] ? env : 'oceano', level: level | 0, mode: mode || '', islands: [], zones: [], route: [] };
-  if (mode === 'zone') map.zones = [{ x: 0, y: 0, r: 300 }, { x: 0, y: Math.round(-H * 0.55), r: 250 }, { x: 0, y: Math.round(H * 0.55), r: 250 }];
+  const map = { seed: seed | 0, size, env: BIOMES[env] ? env : 'oceano', level: level | 0, mode: mode || '', islands: [], zones: [], route: [], ports: [] };
+  if (mode === 'zone') {
+    const n = clamp((opts && opts.zones) | 0 || 3, 1, 5), R = size / 3600;
+    const spots = { 1: [[0, 0, 340]], 2: [[0, -0.42, 300], [0, 0.42, 300]], 3: [[0, 0, 300], [0, -0.55, 250], [0, 0.55, 250]],
+      4: [[-0.3, -0.38, 260], [0.3, -0.38, 260], [-0.3, 0.38, 260], [0.3, 0.38, 260]], 5: [[0, 0, 280], [-0.38, -0.42, 230], [0.38, -0.42, 230], [-0.38, 0.42, 230], [0.38, 0.42, 230]] }[n];
+    map.zones = spots.map(s => ({ x: Math.round(s[0] * size), y: Math.round(s[1] * size), r: Math.round(s[2] * Math.max(0.8, R)) }));
+  }
+  if (mode === 'port' || mode === 'flag') map.ports = [{ team: 'p', x: Math.round(-H * 0.82), y: 0, r: 150 }, { team: 'e', x: Math.round(H * 0.82), y: 0, r: 150 }];
+  if (mode === 'defend') map.ports = [{ team: 'p', x: Math.round(-H * 0.78), y: 0, r: 150 }];
   if (mode === 'convoy') map.route = [[-0.82, 0], [-0.45, -0.22], [-0.05, 0.18], [0.35, -0.12], [0.82, 0.02]].map(p => [Math.round(p[0] * H), Math.round(p[1] * H)]);
   const want = Math.round((level || 0) * (size / 1500) * B.isl * 1.3);
   const keepOut = (x, y, r) => {
     if (!mode && Math.hypot(x, y) < 460 + r) return true;                      // campanha: o jogador nasce no centro
     for (const z of map.zones) if (Math.hypot(x - z.x, y - z.y) < z.r + r + 80) return true;
+    for (const p of map.ports) if (Math.hypot(x - p.x, y - p.y) < p.r + r + 330) return true;           // portos: água livre em volta
+    if (mode === 'loot' && Math.hypot(x, y) < 300 + r) return true;
     for (let i = 0; i < map.route.length - 1; i++) if (segDist(x, y, map.route[i], map.route[i + 1]) < r + 280) return true;
     return false;
   };
@@ -1580,10 +1589,24 @@ function genMap(seed, size, env, level, mode) {
     for (let i = 0; i < n; i++) { const a = i / n * TAU; ks.push(1 + a1 * Math.sin(a * 2 + ph) + a2 * Math.sin(a * 3 + ph * 1.7) + (rnd() - 0.5) * 0.08); }
     const mx = Math.max(...ks), mn = Math.min(...ks);
     const pts = ks.map((k, i) => { const a = i / n * TAU; return [Math.round(Math.cos(a) * r * k / mx), Math.round(Math.sin(a) * r * k / mx)]; });
-    map.islands.push({ x: Math.round(x), y: Math.round(y), r: Math.round(r), rc: Math.round(r * mn / mx * 0.95), pts, v: Math.floor(rnd() * 1e6) });
+    map.islands.push({ x: Math.round(x), y: Math.round(y), r: Math.round(r), rc: Math.round(r * mn / mx * 0.95), pts, v: Math.floor(rnd() * 1e6), hp: Math.round(r * 3.5), mhp: Math.round(r * 3.5) });   // só mísseis balísticos ferem ilhas
   }
   return map;
 }
+
+/* ---- modos de partida contra bots (offline) e suas opções personalizáveis ---- */
+const MODE_INFO = {
+  '':     { name: 'Escaramuça (todos contra você)', desc: 'Escaramuça: você contra os bots escolhidos abaixo.' },
+  zone:   { name: 'Controle de Zona', desc: 'Controle de Zona: segure as zonas com seu time (você + aliados) para pontuar. Quem afunda renasce depois de alguns segundos.' },
+  convoy: { name: 'Comboio (escolte o cargueiro)', desc: 'Comboio: escolte o cargueiro (ele só anda com escolta por perto) até o destino. Se ele afundar, renasce no último ponto de controle.' },
+  port:   { name: 'Ataque ao Porto', desc: 'Ataque ao Porto: cada time tem um porto com torres de defesa. Destrua o porto inimigo (tiros, torpedos, mísseis e, principalmente, mísseis balísticos). Em casa seu time se repara. Quem afunda renasce no porto.' },
+  flag:   { name: 'Capturar a Bandeira', desc: 'Capturar a Bandeira: roube a bandeira do porto inimigo e leve até o seu porto (a sua bandeira precisa estar lá). Quem carrega a bandeira fica mais lento e a solta ao afundar.' },
+  defend: { name: 'Defesa do Porto (ondas)', desc: 'Defesa do Porto: ondas de bots inimigos atacam o seu porto. Aguente todas as ondas! Os inimigos da lista não são usados: as ondas se escalam sozinhas.' },
+  loot:   { name: 'Corrida de Suprimentos', desc: 'Corrida de Suprimentos: caixas aparecem pelo mar. Encoste nelas para pontuar (dourada = 3 pontos, verde = repara o navio). O primeiro time à meta vence.' },
+};
+const MODE_OPTS_DEFAULT = { minutes: 8, respawn: 8, fog: true, ff: false, arena: 3600, score: 200, zones: 3, lives: 3, portHp: 1, turrets: 2, flags: 3, waves: 6, crates: 10, lootScore: 25 };
+/** [mín, máx] de cada opção numérica (validação ao carregar do armazenamento) */
+const MODE_OPTS_RANGE = { minutes: [0, 60], respawn: [2, 30], arena: [2400, 5000], score: [50, 1000], zones: [1, 5], lives: [1, 10], portHp: [0.25, 5], turrets: [0, 6], flags: [1, 10], waves: [1, 20], crates: [3, 30], lootScore: [5, 100] };
 
 /** ponto de nascimento livre de ilhas. side: 'A' (esquerda), 'B' (direita) ou '' (anel). rnd: () => [0,1) */
 function pickSpawn(map, side, rnd, avoid) {
@@ -1593,8 +1616,12 @@ function pickSpawn(map, side, rnd, avoid) {
     let x, y;
     if (side === 'A' || side === 'B') {
       const s = side === 'A' ? -1 : 1;
-      if (map.mode === 'convoy') x = s < 0 ? R(-0.9, -0.62) * H : R(0.15, 0.7) * H; else x = s * R(0.55, 0.85) * H;
-      y = R(-0.6, 0.6) * H;
+      const home = (map.ports || []).find(p => p.team === (side === 'A' ? 'p' : 'e'));
+      if (home) { x = home.x - s * R(120, 420); y = home.y + R(-0.28, 0.28) * H; }                // modos com porto: nasce perto do próprio porto
+      else {
+        if (map.mode === 'convoy') x = s < 0 ? R(-0.9, -0.62) * H : R(0.15, 0.7) * H; else x = s * R(0.55, 0.85) * H;
+        y = R(-0.6, 0.6) * H;
+      }
     } else { const a = R(0, Math.PI * 2), d = R(0.5, 0.8) * H; x = Math.sin(a) * d; y = -Math.cos(a) * d; }
     if (!freeOfIslands(map, x, y, 110)) continue;
     let md = 1e9;
@@ -1688,7 +1715,7 @@ const CARGO_DESIGN = makeDesign([
 /* --------------------------------------------------------------- progresso */
 const Meta = {
   coins: 0, best: 0, design: null, name: '', server: '', zoom: 0,
-  bots: { diff: 'normal', mult: 1, allowed: null, startWave: 1, skirmish: {}, mode: '', allies: 2 },
+  bots: { diff: 'normal', mult: 1, allowed: null, startWave: 1, skirmish: {}, mode: '', allies: 2, opts: Object.assign({}, MODE_OPTS_DEFAULT) },
   map: { env: 'rand', level: 2 },
   budget() { return BASE_BUDGET + this.coins; },
   load() {
@@ -1704,8 +1731,15 @@ const Meta = {
         if (Array.isArray(b.allowed)) this.bots.allowed = b.allowed.filter(x => typeof x === 'string').slice(0, 60);
         if (+b.startWave >= 1 && +b.startWave <= 30) this.bots.startWave = +b.startWave | 0;
         if (b.skirmish && typeof b.skirmish === 'object') this.bots.skirmish = b.skirmish;
-        if (b.mode === 'zone' || b.mode === 'convoy') this.bots.mode = b.mode;
+        if (b.mode && MODE_INFO[b.mode]) this.bots.mode = b.mode;
         if (+b.allies >= 0 && +b.allies <= 4) this.bots.allies = +b.allies | 0;
+        if (b.opts && typeof b.opts === 'object') {                            // opções dos modos de partida
+          for (const k in MODE_OPTS_DEFAULT) {
+            const v = b.opts[k], d = MODE_OPTS_DEFAULT[k];
+            if (typeof d === 'boolean') { if (typeof v === 'boolean') this.bots.opts[k] = v; }
+            else if (Number.isFinite(+v) && v !== null && v !== '') { const [lo, hi] = MODE_OPTS_RANGE[k]; this.bots.opts[k] = Math.min(hi, Math.max(lo, +v)); }
+          }
+        }
       }
       if (j.map && typeof j.map === 'object') {
         if (j.map.env === 'rand' || BIOMES[j.map.env]) this.map.env = j.map.env;
