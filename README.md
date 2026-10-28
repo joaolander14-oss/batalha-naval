@@ -1,4 +1,4 @@
-# ⚓ Batalha Naval — v2.1
+# ⚓ Batalha Naval — v2.2
 
 Monte seu navio **peça por peça** numa grade (casco, armas, motores, aletas, sensores…) e lute contra ondas de inimigos
 ou contra outros jogadores **online**. Funciona no computador e no **celular** (instalável como app).
@@ -35,6 +35,10 @@ ou contra outros jogadores **online**. Funciona no computador e no **celular** (
   - **Mais placas de convés:** Pesada, Cerâmica, Titânio, Corta-fogo e Isolante Térmica (esconde o calor dos motores vizinhos).
   - **Ilhas** (terra invencível: navios batem e tiros diretos param; morteiros, balísticos e drones passam por cima) e **7 ambientes**: mar aberto, arquipélago tropical, ártico, tempestade, nevoeiro, noite e costa vulcânica (alguns reduzem a visão).
   - **Modos de partida** (online e contra bots): **Controle de Zona** (segure 3 zonas para pontuar) e **Comboio** (a equipe A escolta o cargueiro até o destino; a B tenta afundá-lo; ele renasce no último ponto de controle até acabarem as vidas).
+- **v2.2 — modos online, hidrogênio e radiação:**
+  - Os modos **Ataque ao Porto**, **Capturar a Bandeira**, **Defesa do Porto** e **Corrida de Suprimentos** também existem no **online**: escolha o modo ao criar a sala (o anfitrião ajusta vida dos portos, torres, capturas, caixas e zonas no lobby). Contra bots ficam em 🤖 **Bots e modos**.
+  - **☢ Míssil de Hidrogênio:** liberado depois de N abates (o anfitrião escolhe), tecla `H`. Uma onda de choque destrói TODOS os navios e ilhas do mapa e **quem lançou vence a partida**.
+  - **Radiação:** mísseis nucleares deixam uma zona radioativa por 60 s onde as peças da borda dos navios pegam fogo. Defenda-se com **Casco Anti-Radiação**, **Placa Anti-Radiação** e **Sistema de Descontaminação**.
 - **Ilhas destrutíveis e novos modos (v2.1):**
   - Só **mísseis balísticos** destroem ilhas (cada ilha tem vida; vão aparecendo crateras e ela desaba). O **nuclear** vaporiza ilhas inteiras. Tiros, torpedos, morteiros e mísseis de cruzeiro continuam parando na ilha sem machucá-la.
   - Modos contra bots, todos personalizáveis na janela 🤖 Bots (duração, reaparecimento, tamanho do mapa, névoa, fogo amigo e opções de cada modo): **Ataque ao Porto** (destrua o porto inimigo; torres de defesa e reparo em casa), **Capturar a Bandeira**, **Defesa do Porto** (ondas de inimigos) e **Corrida de Suprimentos** (caixas pelo mar), além de Controle de Zona (1 a 5 zonas) e Comboio.

@@ -290,3 +290,8 @@ body.touch .host-btn { left: 62px; top: 10px; }
 .sb-row .btn { flex: 1; padding: 6px 4px; font-size: .78rem; }
 .sb-stats { background: #0c2038; border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; font-size: .82rem; line-height: 1.5; margin: 4px 0; }
 .sb-stats b { color: var(--accent); }
+
+/* v2.2: bomba de hidrogênio */
+.hydro-line { margin: 4px 0; padding: 4px 8px; border-radius: 8px; font-size: .8rem; font-weight: 700; color: #f0d6ff; border: 1px solid rgba(190,120,255,.6); text-align: center; }
+#touch .tbtn.hydro { right: calc(210px + env(safe-area-inset-right)); bottom: calc(262px + env(safe-area-inset-bottom)); background: rgba(190,100,255,.25); border-color: rgba(200,130,255,.85); }
+#touch .tbtn.hydro.hidden { display: none; }

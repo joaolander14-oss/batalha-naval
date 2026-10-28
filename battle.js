@@ -727,6 +727,7 @@ class Ship {
         }
         break;
       case 'ballistic':
+        if (P.hydro) { if (inp.fireHydro && t.cd <= 0) Battle.tryHydro(this, t, P, wx, wy); break; }          // a bomba de hidrogênio só dispara com H
         if (inp.fireBallistic && t.cd <= 0 && inp.strike) {
           const dist = Math.hypot(inp.strikeX - wx, inp.strikeY - wy);
           if (dist < P.minRange) break;
@@ -965,7 +966,7 @@ const Battle = {
   ships: [], shots: [], parts: [], player: null, cam: { x: 0, y: 0 }, shake: 0, time: 0,
   keys: new Set(), mouse: { x: 0, y: 0, left: false, right: false },
   wave: 1, state: 'idle', running: false, last: 0, clearTimer: 0, overTimer: 0,
-  runCoins: 0, kills: 0, design: null, hud: {}, mode: 'campaign', drones: [], flares: [], smokes: [], sb: null, ports: [], flags: [], crates: [], nukes: [], scars: [], crateT: 0, map: null, islands: [], env: null, envMul: 1, objMode: '', nukeT: 0, nukePos: null, zoneState: null, objState: null, strikePt: null, respawnQ: [], mission: null, wxT: 0, bolt: 0, drops: [], noFog: false, friendlyFire: false, hostPaused: false, teamLast: {}, skirmish: null, localIds: new Set(), zoom: 1, shotSeq: 0, myDesign: null, cfg: null, deadNotice: false, contacts: new Map(), obs: [], aiAware: true, aiLast: { x: 0, y: 0 }, stealthT: 0,
+  runCoins: 0, kills: 0, design: null, hud: {}, mode: 'campaign', drones: [], flares: [], smokes: [], sb: null, ports: [], flags: [], crates: [], nukes: [], scars: [], crateT: 0, rad: [], hydro: null, hKills: 0, map: null, islands: [], env: null, envMul: 1, objMode: '', nukeT: 0, nukePos: null, zoneState: null, objState: null, strikePt: null, respawnQ: [], mission: null, wxT: 0, bolt: 0, drops: [], noFog: false, friendlyFire: false, hostPaused: false, teamLast: {}, skirmish: null, localIds: new Set(), zoom: 1, shotSeq: 0, myDesign: null, cfg: null, deadNotice: false, contacts: new Map(), obs: [], aiAware: true, aiLast: { x: 0, y: 0 }, stealthT: 0,
 
   init() {
     this.canvas = document.getElementById('game'); this.ctx = this.canvas.getContext('2d');
@@ -1043,7 +1044,8 @@ const Battle = {
     const so = this.objMode ? Object.assign({}, MODE_OPTS_DEFAULT, skirmish.opts || {}) : null;       // opções do modo (tamanho do mapa, névoa, fogo amigo…)
     setArena(so ? so.arena : 3600); this.noFog = so ? !so.fog : false; this.friendlyFire = so ? !!so.ff : false; this.hostPaused = false;
     this.objState = null; this.zoneState = null; this.respawnQ = []; this.mission = null; this.strikePt = null; this.flares = []; this.smokes = [];
-    this.ports = []; this.flags = []; this.crates = []; this.nukes = []; this.scars = []; this.crateT = 0;
+    this.ports = []; this.flags = []; this.crates = []; this.nukes = []; this.scars = []; this.crateT = 0; this.rad = []; this.hydro = null;
+    this.hKills = so ? so.hKills : ((skirmish && skirmish.opts && skirmish.opts.hKills !== undefined) ? skirmish.opts.hKills : Meta.bots.opts.hKills);   // abates para liberar a bomba de hidrogênio (0 = desligada)
     document.getElementById('screen-battle').classList.toggle('objmode', !!this.objMode);
     const sandbox = !!(skirmish && skirmish.sandbox);                            // Campo de testes: mar vazio, sem fim de partida
     document.getElementById('screen-battle').classList.toggle('sandbox', sandbox); this.sb = null;
@@ -1090,9 +1092,9 @@ const Battle = {
     SFX.init();
     this.mode = 'online'; document.getElementById('screen-battle').classList.add('online'); document.getElementById('screen-battle').classList.remove('sandbox'); this.sb = null;
     setArena(cfg.settings.arena || 3600); this.hostPaused = false; this.applyRules(cfg.settings);
-    this.objMode = (cfg.settings.mode === 'zone' || cfg.settings.mode === 'convoy') ? cfg.settings.mode : ''; this.objState = null; this.zoneState = null; this.respawnQ = []; this.mission = null; this.strikePt = null; this.flares = []; this.smokes = []; this.ports = []; this.flags = []; this.crates = []; this.nukes = []; this.scars = [];
+    this.objMode = ['zone', 'convoy', 'port', 'flag', 'defend', 'loot'].includes(cfg.settings.mode) ? cfg.settings.mode : ''; this.objState = null; this.zoneState = null; this.respawnQ = []; this.mission = null; this.strikePt = null; this.flares = []; this.smokes = []; this.ports = []; this.flags = []; this.crates = []; this.nukes = []; this.scars = []; this.rad = []; this.hydro = null; this.hKills = cfg.settings.hKills || 0;
     document.getElementById('screen-battle').classList.toggle('objmode', !!this.objMode);
-    this.setMap(genMap(cfg.map.seed, cfg.settings.arena || 3600, cfg.map.env, cfg.map.level, this.objMode));
+    this.setMap(genMap(cfg.map.seed, cfg.settings.arena || 3600, cfg.map.env, cfg.map.level, this.objMode, cfg.settings)); this.initOnlineObjectives(cfg.settings);
     this.cfg = cfg; this.myDesign = cfg.me.design; this.shotSeq = 0; this.deadNotice = false;
     this.wave = 0; this.runCoins = 0; this.kills = 0;
     this.ships = []; this.shots = []; this.parts = []; this.time = 0; this.shake = 0;
@@ -1111,7 +1113,7 @@ const Battle = {
     if (!this.running) { this.running = true; this.last = performance.now(); requestAnimationFrame(t => this.loop(t)); }
   },
   /** regras da sala que valem durante a partida */
-  applyRules(st) { this.noFog = st.fog === false; this.friendlyFire = !!st.ff; },
+  applyRules(st) { this.noFog = st.fog === false; this.friendlyFire = !!st.ff; this.hKills = st.hKills || 0; },
   /** `s` é da equipe `team` e não deve ser atingido? (fogo amigo liga: só o próprio dono do tiro é poupado) */
   sameTeam(s, team, owner) { return s.team === team && !(this.friendlyFire && s.id !== owner); },
   addRemote(p, sp) {
@@ -1152,6 +1154,7 @@ const Battle = {
     if (p.lock === 'tele') p.lock = 'radar';                                        // sem o cursor do dono: o teleguiado vira radar nas outras telas
     if (m.kind === 'missile' || (m.kind === 'torp' && m.turn)) p.target = this.shipById(m.tg) || null;
     this.shots.push(p);
+    if (m.wh === 'hydro') this.hydroAlert(Online.nameOf(m.owner));              // alerta para todos: bomba de hidrogênio lançada
     if (this.inVision(p.x, p.y)) this.addP({ t: 'flash', x: p.x, y: p.y, life: 0.09, s: 9, g: 20 });
   },
   netHit(m) {
@@ -1161,7 +1164,7 @@ const Battle = {
   /** chamado a cada quadro no modo online */
   onlineTick(dt) {
     const pl = this.player;
-    if (pl.dead && !this.deadNotice) { this.deadNotice = true; Online.localDead(); }
+    if (pl.dead && !this.deadNotice) { this.deadNotice = true; if (this.hydro) Online.notice('☢ Tudo foi destruído… aguardando o resultado'); else Online.localDead(); }
     Online.tick(dt, pl);
   },
 
@@ -1353,6 +1356,7 @@ const Battle = {
       return;
     }
     this.explosion(ship.x, ship.y, 2);
+    if (ship.hydroDeath) return;                                              // destruído pela bomba de hidrogênio: sem pontos, moedas nem renascimento
     if (this.mode === 'online') { if (ship === this.player) Online.sendDied(ship.lastAttacker); else if (!ship.remote && ship.ai) Online.sendDied(ship.lastAttacker, ship.id); return; }
     if (this.objMode) { this.objSunk(ship); return; }
     if (ship.team === 'e' && !this.skirmish) {
@@ -1526,6 +1530,7 @@ const Battle = {
     i.fireMissile = i.fireTorp;
     i.fireAux = k.has('KeyF');
     i.fireBallistic = k.has('KeyB') || Touch.ball;
+    i.fireHydro = k.has('KeyH') || Touch.hydro;                                  // bomba de hidrogênio (precisa estar liberada)
     if (this.strikePt) { i.strike = true; i.strikeX = this.strikePt.x; i.strikeY = this.strikePt.y; } else i.strike = false;
     if (Touch.enabled && !Touch.root.classList.contains('hidden')) Touch.apply(p, i, this);
   },
@@ -1671,7 +1676,10 @@ const Battle = {
     this.updateDrones(dt);
     this.updateFlares(dt);
     this.updateSmokes(dt);
+    if (this.mode === 'online' && (this.ports.length || this.flags.length)) this.onlineObjStep(dt);
     this.updateNukes(dt);
+    this.updateRad(dt);
+    this.updateHydro(dt);
     if (this.nukeT > 0) this.nukeT = Math.max(0, this.nukeT - dt * 0.8);
     this.islandStep(dt);
     this.mapFx(dt);
@@ -1823,7 +1831,8 @@ const Battle = {
           UI.banner(foes.every(f => f.sig < 0.5) ? 'SINAL FURTIVO' : 'INIMIGOS LOCALIZADOS', 'Expostos por alguns segundos');
         }
       } else this.stealthT = 0;
-      if (this.player.dead) {
+      if (this.hydro) { /* a bomba de hidrogênio decide o fim (hydroEnd) */ }
+      else if (this.player.dead) {
         this.overTimer += dt;
         if (this.overTimer > 0.8) this.gameOver();
       } else if (alive === 0 && !this.player.sinking) {
@@ -2024,9 +2033,15 @@ const Battle = {
   },
   portOf(team) { return this.ports.find(p => p.team === team); },
   /** dano em um porto (multiplicador por tipo de arma; mísseis balísticos arrasam) */
-  hitPort(port, dmg, kind) {
+  hitPort(port, dmg, kind, owner) {
     if (port.dead || port.safe) return;
-    port.hp -= dmg * (PORT_MULT[kind] === undefined ? 1 : PORT_MULT[kind]); port.flash = 0.2;
+    const d = dmg * (PORT_MULT[kind] === undefined ? 1 : PORT_MULT[kind]);
+    port.flash = 0.2;
+    if (this.mode === 'online') {                                                  // online: quem atirou informa o dano; o servidor soma e devolve a vida do porto
+      if (owner && this.localIds.has(owner) && d > 0) { const a = this.portAcc || (this.portAcc = {}), k = port.team + '|' + owner; a[k] = (a[k] || 0) + d; }
+      return;
+    }
+    port.hp -= d;
     if (port.hp > 0) return;
     port.hp = 0; port.dead = true;
     for (let i = 0; i < 9; i++) this.explosion(port.x + rand(-port.r * 0.6, port.r * 0.6), port.y + rand(-port.r * 0.6, port.r * 0.6), rand(1.2, 2.4));
@@ -2044,7 +2059,7 @@ const Battle = {
     for (const port of this.ports) {
       if (port.dead || port.team === p.team || Math.hypot(p.x - port.x, p.y - port.y) > port.r) continue;
       if (p.kind === 'torp' || p.kind === 'missile') this.blast(p.x, p.y, p.splash, p.dmg, p.team, p.owner, this.warKind(p), null, p.kind === 'torp' ? true : undefined);
-      else { this.hitPort(port, p.dmg, p.kind); this.impact(p.x, p.y); }
+      else { this.hitPort(port, p.dmg, p.kind, p.owner); this.impact(p.x, p.y); }
       return true;
     }
     return false;
@@ -2056,6 +2071,12 @@ const Battle = {
       if (port.dead) continue;
       for (const t of port.turrets) {
         const tx = port.x + Math.cos(t.a) * port.r * 0.62, ty = port.y + Math.sin(t.a) * port.r * 0.62;
+        if (this.mode === 'online') {                                              // online: o servidor atira; aqui as torres só giram para o alvo mais próximo
+          let best = null, bd = 560;
+          for (const s of this.ships) { if (s.team === port.team || s.sinking || s.dead || s.depth > DEEP) continue; const d = Math.hypot(s.x - tx, s.y - ty); if (d < bd) { bd = d; best = s; } }
+          if (best) t.ang += angDiff(Math.atan2(best.x - tx, -(best.y - ty)), t.ang) * Math.min(1, dt * 6);
+          continue;
+        }
         if ((t.cd -= dt) > 0) { t.ang += angDiff(t.want === undefined ? t.ang : t.want, t.ang) * Math.min(1, dt * 6); continue; }
         let best = null, bd = 560;
         for (const s of this.ships) {
@@ -2084,6 +2105,48 @@ const Battle = {
     }
   },
   initFlags() { this.flags = this.ports.map(pt => ({ team: pt.team, hx: pt.x, hy: pt.y, x: pt.x, y: pt.y, state: 'home', carrier: null, dropT: 0 })); },
+
+  /* ----------- modos novos no online: o servidor (anfitrião) manda o estado; aqui só se desenha e se aplica o efeito no navio local ----------- */
+  initOnlineObjectives(S) {
+    const om = this.objMode, n = S.turrets === undefined ? 2 : S.turrets;
+    this.ports = (this.map.ports || []).map(p => {
+      const T = p.team === 'p' ? 'A' : 'B', hp = Math.round(1500 * (S.portHp || 1));
+      return { id: 'port' + T, team: T, x: p.x, y: p.y, r: p.r, hp, max: hp, flash: 0, dead: false, safe: om === 'flag',
+        turrets: Array.from({ length: n }, (_, k) => ({ a: k / Math.max(1, n) * TAU + 0.8, ang: T === 'A' ? Math.PI / 2 : -Math.PI / 2, cd: 0 })) };
+    });
+    this.flags = om === 'flag' ? this.ports.map(pt => ({ team: pt.team, hx: pt.x, hy: pt.y, x: pt.x, y: pt.y, state: 'home', carrier: null, carrierId: '' })) : [];
+    this.crates = []; this.portAcc = {}; this.portAccT = 0;
+  },
+  applyObj(o) {
+    if (o.ports) for (const T in o.ports) { const p = this.portOf(T); if (p) { p.hp = o.ports[T][0]; p.max = o.ports[T][1]; p.dead = p.hp <= 0 && !p.safe; } }
+    if (o.flags) for (const f of this.flags) { const a = o.flags[f.team]; if (a) { f.state = a[0]; f.x = a[1]; f.y = a[2]; f.carrierId = a[3] || ''; } }
+    if (o.crates) this.crates = o.crates.map(a => ({ id: a[0], x: a[1], y: a[2], kind: a[3], v: a[3] === 'gold' ? 3 : 1, age: 0 }));
+  },
+  /** curar o navio (caixa de reparo) */
+  healAll(s, frac) {
+    for (const cell of s.list) { cell.hp = Math.min(cell.maxHp, cell.hp + cell.maxHp * frac); if (cell.top) cell.top.hp = Math.min(cell.top.maxHp, cell.top.hp + cell.top.maxHp * frac); cell.fire = 0; }
+  },
+  onCrate(m) {
+    this.addP({ t: 'text', txt: (m.kind === 'repair' ? '🔧 +' : '📦 +') + m.v, x: m.x, y: m.y - 20, vy: -35, life: 1.6, s: 20, col: m.kind === 'gold' ? '#ffd166' : m.kind === 'repair' ? '#7bf0a8' : '#fff' });
+    this.crates = this.crates.filter(c => c.id !== m.id);
+    const s = this.localIds.has(m.by) ? this.shipById(m.by) : null;
+    if (s && !s.remote && m.kind === 'repair') this.healAll(s, 0.4);
+  },
+  /** a cada quadro online: bandeiras seguem quem as carrega, navios sabem se carregam, envio do dano nos portos */
+  onlineObjStep(dt) {
+    for (const f of this.flags) {
+      f.carrier = f.carrierId ? this.shipById(f.carrierId) || null : null;
+      if (f.state === 'carried' && f.carrier) { f.x = f.carrier.x; f.y = f.carrier.y; }
+    }
+    if (this.flags.length) for (const s of this.ships) s.carrying = this.flags.find(f => f.carrierId === s.id) || null;
+    this.updatePorts(dt);
+    this.portAccT += dt;
+    if (this.portAccT >= 0.3) {
+      this.portAccT = 0;
+      for (const k in this.portAcc) { const [team, owner] = k.split('|'); Online.sendPortHit(team, this.portAcc[k], owner); }
+      this.portAcc = {};
+    }
+  },
   flagHome(f) { f.state = 'home'; f.x = f.hx; f.y = f.hy; f.carrier = null; f.dropT = 0; },
   updateFlags(dt) {
     const m = this.mission;
@@ -2134,7 +2197,7 @@ const Battle = {
       for (const c of this.crates) {
         if (c.taken || Math.hypot(s.x - c.x, s.y - c.y) > 46 + s.radius * 0.25) continue;
         c.taken = true; m.score[s.team] = (m.score[s.team] || 0) + c.v;
-        if (c.kind === 'repair') for (const cell of s.list) { cell.hp = Math.min(cell.maxHp, cell.hp + cell.maxHp * 0.4); if (cell.top) cell.top.hp = Math.min(cell.top.maxHp, cell.top.hp + cell.top.maxHp * 0.4); cell.fire = 0; }
+        if (c.kind === 'repair') this.healAll(s, 0.4);
         this.addP({ t: 'text', txt: (c.kind === 'repair' ? '🔧 +' : '📦 +') + c.v, x: c.x, y: c.y - 20, vy: -35, life: 1.6, s: 20, col: c.kind === 'gold' ? '#ffd166' : c.kind === 'repair' ? '#7bf0a8' : '#fff' });
         if (s === this.player) this.shake = Math.min(1, this.shake + 0.03);
       }
@@ -2199,6 +2262,7 @@ const Battle = {
     let alive = 0;
     for (const s of this.ships) if (s.team === 'e' && !s.sinking && !s.dead) alive++;
     if (!m || m.over) return alive;
+    if (this.hydro) return alive;                                                  // bomba de hidrogênio em andamento: só ela decide o fim
     m.t += dt;
     for (const q of this.respawnQ) q.t -= dt;
     if (this.respawnQ.some(q => q.t <= 0)) { const due = this.respawnQ.filter(q => q.t <= 0); this.respawnQ = this.respawnQ.filter(q => q.t > 0); for (const q of due) this.objRespawn(q); }
@@ -2263,10 +2327,10 @@ const Battle = {
   /** destino de um bot sem alvo no modo com objetivo: { x, y, hold } */
   objGoal(s) {
     if (!this.map) return null;
-    const m = this.mission, mt = m && m.type, idx = +(String(s.id).match(/(\d+)(?!.*\d)/) || [0, 0])[1];
+    const mt = this.mission ? this.mission.type : this.objMode, idx = +(String(s.id).match(/(\d+)(?!.*\d)/) || [0, 0])[1];
     if (mt === 'port' || mt === 'defend') {
       const own = this.portOf(s.team), foe = this.ports.find(p => p.team !== s.team && !p.dead);
-      const attacker = mt === 'defend' ? s.team === 'e' : idx % 2 === 0;               // no Ataque ao Porto, metade do time ataca e metade defende
+      const attacker = mt === 'defend' ? !own : idx % 2 === 0;               // no Ataque ao Porto, metade do time ataca e metade defende
       if (attacker && foe) return { x: foe.x, y: foe.y, hold: clamp((s.maxRange || 0) * 0.55, 120, 600), port: foe };
       if (own && !own.dead) return { x: own.x + Math.cos(idx * 2.1) * own.r * 1.3, y: own.y + Math.sin(idx * 2.1) * own.r * 1.3, hold: 90 };
       return foe ? { x: foe.x, y: foe.y, hold: 300, port: foe } : null;
@@ -2463,6 +2527,7 @@ const Battle = {
   /** queda de um míssil balístico: ogiva comum, nuclear, incendiária, EMP ou MIRV (6 submunições) */
   landBallistic(p) {
     const wh = p.wh || '';
+    if (wh === 'hydro') return this.landHydro(p);                                  // bomba de hidrogênio: destrói tudo
     if (wh === 'cluster') {
       for (let i = 0; i < 6; i++) {
         const a = rand(0, TAU), r = Math.sqrt(Math.random()) * 110, T = 0.12 + i * 0.09;
@@ -2473,6 +2538,7 @@ const Battle = {
     }
     this.blast(p.tx, p.ty, p.splash, p.dmg, p.team, p.owner, wh === 'nuke' ? 'nuke' : wh === 'inc' ? 'inc' : wh === 'emp' ? 'emp' : 'ballistic', null, wh === 'nuke' ? false : undefined);
     if (wh !== 'emp') this.damageIslands(p.tx, p.ty, p.splash, p.dmg, wh || 'ballistic');          // só mísseis balísticos destroem ilhas
+    if (wh === 'nuke') this.addRad(p.tx, p.ty, p.splash * 0.92);                                     // radiação no chão (as peças da borda pegam fogo)
   },
   /** ogivas especiais ao acertar uma célula */
   detonate(p, s, c) {
@@ -2547,9 +2613,97 @@ const Battle = {
     for (const port of this.ports) {                                                                     // portos inimigos também sofrem (cada explosão vale por várias peças)
       if (port.dead || port.team === team) continue;
       const d = Math.hypot(port.x - x, port.y - y);
-      if (d < radius + port.r) this.hitPort(port, dmg * (1 - 0.5 * clamp((d - port.r * 0.4) / (radius + port.r), 0, 1)), kind);
+      if (d < radius + port.r) this.hitPort(port, dmg * (1 - 0.5 * clamp((d - port.r * 0.4) / (radius + port.r), 0, 1)), kind, owner);
     }
     if (kind === 'nuke') for (const dr of this.drones) if (!dr.dead && !dr.remote && Math.hypot(dr.x - x, dr.y - y) < radius * 1.3) this.killDrone(dr, 'boom');
+  },
+
+  /* ------------------------------------------------------------------ radiação e bomba de hidrogênio */
+  /** zona de radiação deixada por uma explosão nuclear: as peças da BORDA dos navios pegam fogo (a menos que sejam anti-radiação) */
+  addRad(x, y, r) { this.rad.push({ x, y, r, life: 60, max: 60 }); if (this.rad.length > 8) this.rad.shift(); },
+  updateRad(dt) {
+    if (!this.rad.length) return;
+    for (const z of this.rad) z.life -= dt;
+    this.rad = this.rad.filter(z => z.life > 0);
+    for (const s of this.ships) {
+      if (s.remote || s.sinking || s.dead) continue;
+      let k = 0;
+      for (const z of this.rad) if (Math.hypot(s.x - z.x, s.y - z.y) < z.r) k = Math.max(k, 0.35 + 0.65 * z.life / z.max);
+      s.inRad = k > 0;
+      if (!k) { s.radT = 0; s.radWarned = false; continue; }
+      s.radT = (s.radT || 0) + dt;
+      if (s.radT >= 0.8) { s.radT = 0; this.radiate(s, k); }
+      if (s.stats.decons) for (const c of s.list) if (c.fire > 0 && Math.random() < dt * 0.55 * Math.min(2, s.stats.decons)) c.fire = 0;      // jatos de lavagem apagam o fogo
+      if (s === this.player && !s.radWarned) { s.radWarned = true; UI.banner('☢ RADIAÇÃO', 'As peças da borda pegam fogo! Saia da zona ou use blindagem anti-radiação'); }
+    }
+  },
+  radiate(s, k) {
+    const decon = s.stats.decons ? Math.pow(0.35, Math.min(2, s.stats.decons)) : 1, ch = (0.3 + 0.4 * k) * decon;
+    for (const c of s.list) {
+      if (c.dead || c.fire > 0 || fireproofCell(c)) continue;
+      if (PARTS[c.base].radProof || (c.top && PARTS[c.top.type].radProof)) continue;                     // casco/placa anti-radiação: imune
+      let outer = false;
+      for (const [dx, dy] of N4) if (!s.cells.has((c.gx + dx) + ',' + (c.gy + dy))) { outer = true; break; }
+      if (outer && Math.random() < ch) { c.fire = 6; c.fireBy = null; }
+    }
+  },
+
+  /** abates feitos e necessários para liberar a bomba de hidrogênio */
+  hydroNeed() { return this.mode === 'online' ? ((Online.cfg && Online.cfg.settings.hKills) || 0) : this.hKills; },
+  hydroHave() { return this.mode === 'online' ? ((Online.scores.find(q => q.id === Online.id) || {}).kills || 0) : this.kills; },
+  hydroUnlocked() { return !!this.sb || (this.hydroNeed() > 0 && this.hydroHave() >= this.hydroNeed()); },
+  /** o jogador apertou H (ou o botão ☢): lança a bomba se estiver liberada */
+  tryHydro(ship, t, P, wx, wy) {
+    if (ship.ai || this.hydro) return;
+    if (!this.hydroUnlocked()) {
+      if (this.time - (this.hydroMsgT || -9) > 1.5) {
+        this.hydroMsgT = this.time; const need = this.hydroNeed();
+        UI.banner('☢ BLOQUEADA', need > 0 ? 'Faça ' + need + ' abates para liberar a bomba de hidrogênio (você tem ' + this.hydroHave() + ')' : 'A bomba de hidrogênio está desligada nesta partida');
+      }
+      return;
+    }
+    const inp = ship.input, tx = inp.strike ? inp.strikeX : 0, ty = inp.strike ? inp.strikeY : 0, T = 9;
+    t.cd = 1e6; t.recoil = 1;
+    this.shoot({ kind: 'ballistic', size: 'G', wh: 'hydro', x: wx, y: wy, x0: wx, y0: wy, tx, ty, T, life: T, dmg: P.dmg, splash: P.splash, team: ship.team, owner: ship.id });
+    this.hydroAlert(ship.label || 'Você');
+    SFX.play('boom', wx, wy); ship.doReveal(99999, 99);
+  },
+  hydroAlert(who) { UI.banner('☢ MÍSSIL DE HIDROGÊNIO LANÇADO', (who ? who + ' · ' : '') + 'impacto em 9 s: tudo será destruído'); this.shake = Math.min(1, this.shake + 0.3); },
+  /** impacto: uma onda de destruição varre o mapa inteiro (navios, ilhas, drones e tiros); quem lançou vence */
+  landHydro(p) {
+    if (this.hydro) return;
+    this.hydro = { x: p.tx, y: p.ty, t: 0, by: p.owner, team: p.team, done: false };
+    this.nukeT = 1.8; this.nukePos = { x: p.tx, y: p.ty, r: 1200 };
+    this.nukes.push({ x: p.tx, y: p.ty, r: 1100, t: 0, life: 26 });
+    for (let i = 0; i < 12; i++) this.explosion(p.tx + rand(-500, 500), p.ty + rand(-500, 500), rand(2, 3.4));
+    this.shake = 1; this.respawnQ = []; SFX.play('boom', p.tx, p.ty);
+    UI.banner('☢ DETONAÇÃO', 'A onda de choque varre o mapa inteiro');
+  },
+  updateHydro(dt) {
+    const h = this.hydro; if (!h) return;
+    h.t += dt;
+    const R = h.t * 1600;
+    for (const s of this.ships) {
+      if (s.remote || s.sinking || s.dead || s.hydroDeath) continue;
+      if (Math.hypot(s.x - h.x, s.y - h.y) <= R) { s.hydroDeath = true; s.shield = 0; s.sink(); }
+    }
+    for (const isl of this.islands.slice()) if (Math.hypot(isl.x - h.x, isl.y - h.y) <= R + isl.r) this.destroyIsland(isl, true);
+    for (const d of this.drones) if (!d.dead && !d.remote && Math.hypot(d.x - h.x, d.y - h.y) <= R) this.killDrone(d, 'boom');
+    for (const sh of this.shots) if (!sh.dead && sh.kind !== 'ballistic' && Math.hypot(sh.x - h.x, sh.y - h.y) <= R) sh.dead = true;
+    if (!h.done && R > WORLD * 1.1 + 400) { h.done = true; if (this.mode !== 'online') h.endT = 4; }               // online: quem encerra a partida é o servidor
+    if (h.endT !== undefined && (h.endT -= dt) <= 0) { h.endT = undefined; this.hydroEnd(); }
+    if (this.sb && h.t > 7) this.hydro = null;                                                                      // campo de testes: continua depois
+  },
+  hydroEnd() {
+    if (this.sb || this.mode === 'online') return;
+    const mine = this.hydro.team === this.player.team, m = this.mission;
+    if (m) { this.objEnd(mine, mine ? 'Bomba de hidrogênio!' : 'Os inimigos lançaram a bomba de hidrogênio', 'Tudo foi destruído. Vitória de quem lançou o míssil.'); return; }
+    this.state = mine ? 'cleared' : 'over';
+    UI.overlay({
+      title: mine ? '☢ Vitória pela bomba de hidrogênio!' : '☢ A bomba de hidrogênio destruiu tudo',
+      html: `<p>${mine ? 'Você lançou o míssil de hidrogênio: todos os navios e ilhas foram destruídos e a partida é sua.' : 'Os inimigos lançaram a bomba de hidrogênio.'}</p><p class="muted">Abates: <b>${this.kills}</b></p>`,
+      buttons: [{ label: 'Voltar ao estaleiro', primary: true, onClick: () => UI.toYard() }],
+    });
   },
 
   /* ------------------------------------------------------------------ ilhas destruídas (só por mísseis balísticos) e cogumelo atômico */
@@ -2595,6 +2749,25 @@ const Battle = {
       if (a <= 0.01 || Math.abs(s.x - this.cam.x) > this.W / this.zoom / 2 + s.r || Math.abs(s.y - this.cam.y) > this.H / this.zoom / 2 + s.r) continue;
       const g = ctx.createRadialGradient(s.x, s.y, s.r * 0.3, s.x, s.y, s.r); g.addColorStop(0, `rgba(20,16,12,${a.toFixed(3)})`); g.addColorStop(1, 'rgba(20,16,12,0)');
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, TAU); ctx.fill();
+    }
+    for (const z of this.rad) {                                                  // zona de radiação: brilho verde pulsante com trevo e anel tracejado
+      if (Math.abs(z.x - this.cam.x) > this.W / this.zoom / 2 + z.r || Math.abs(z.y - this.cam.y) > this.H / this.zoom / 2 + z.r) continue;
+      const k = clamp(z.life / 8, 0, 1) * (0.55 + 0.45 * z.life / z.max), p = 0.5 + 0.5 * Math.sin(this.time * 2.2);
+      const g = ctx.createRadialGradient(z.x, z.y, z.r * 0.2, z.x, z.y, z.r);
+      g.addColorStop(0, `rgba(182,227,74,${(0.05 * k).toFixed(3)})`); g.addColorStop(0.75, `rgba(150,220,60,${((0.16 + 0.08 * p) * k).toFixed(3)})`); g.addColorStop(1, 'rgba(120,200,40,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, TAU); ctx.fill();
+      ctx.strokeStyle = `rgba(190,240,70,${(0.55 * k).toFixed(3)})`; ctx.lineWidth = 4; ctx.setLineDash([26, 18]); ctx.lineDashOffset = -this.time * 22;
+      ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+      ctx.save(); ctx.translate(z.x, z.y); ctx.rotate(this.time * 0.15); ctx.fillStyle = `rgba(190,240,70,${(0.12 * k).toFixed(3)})`;
+      for (let i = 0; i < 3; i++) { const a = i * TAU / 3 - Math.PI / 2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, z.r * 0.32, a - 0.5, a + 0.5); ctx.closePath(); ctx.fill(); }
+      ctx.restore();
+    }
+    if (this.hydro) {                                                            // frente de choque da bomba de hidrogênio
+      const h = this.hydro, R = h.t * 1600;
+      const g = ctx.createRadialGradient(h.x, h.y, Math.max(0, R - 500), h.x, h.y, R + 40);
+      g.addColorStop(0, 'rgba(255,230,180,0)'); g.addColorStop(0.8, `rgba(255,214,150,${(0.45 * clamp(1 - h.t / 6, 0, 1)).toFixed(3)})`); g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(h.x, h.y, R + 40, 0, TAU); ctx.fill();
+      ctx.strokeStyle = `rgba(255,255,255,${(0.8 * clamp(1 - h.t / 7, 0, 1)).toFixed(3)})`; ctx.lineWidth = 14; ctx.beginPath(); ctx.arc(h.x, h.y, R, 0, TAU); ctx.stroke();
     }
     for (const n of this.nukes) {
       const t = n.t, R = n.r, fade = clamp((n.life - t) / 3.5, 0, 1);
@@ -2881,8 +3054,19 @@ const Battle = {
     if (chips !== this.crewHtml) { this.crewHtml = chips; h.crew.innerHTML = chips; }
     hs(h['row-ball'], 'disp', w.ballistic === null ? 'none' : '');
     if (w.ballistic !== null) { hs(h['cd-ball'], 'width', (w.ballistic * 100).toFixed(0) + '%'); hs(h['cd-ball'], 'bg', this.strikePt ? '' : '#667'); }
-    const t = this.tbtn || (this.tbtn = { ball: document.getElementById('tbtn-ball'), dive: document.getElementById('tbtn-dive'), aux: document.getElementById('tbtn-aux') });
+    const t = this.tbtn || (this.tbtn = { ball: document.getElementById('tbtn-ball'), dive: document.getElementById('tbtn-dive'), aux: document.getElementById('tbtn-aux'), hydro: document.getElementById('tbtn-hydro') });
     if (t.ball) t.ball.classList.toggle('hidden', w.ballistic === null);
+    if (t.hydro) t.hydro.classList.toggle('hidden', !p.stats.hydros);
+    const hy = document.getElementById('hud-hydro');                           // linha da bomba de hidrogênio: abates / necessários
+    if (hy) {
+      const has = p.stats.hydros > 0 && !p.sinking;
+      hs(hy, 'disp', has ? '' : 'none');
+      if (has) {
+        const need = this.hydroNeed(), have = this.hydroHave(), ok = this.hydroUnlocked();
+        hs(hy, 'text', this.hydro ? '☢ DETONANDO…' : ok ? '☢ Hidrogênio LIBERADO · tecla H' : need > 0 ? '☢ Hidrogênio: ' + Math.min(have, need) + '/' + need + ' abates' : '☢ Hidrogênio desligado');
+        hs(hy, 'bg', ok ? 'rgba(180,70,255,.35)' : 'rgba(40,50,70,.6)');
+      }
+    }
     hs(h['row-mine'], 'disp', w.mine === null ? 'none' : '');
     if (w.mine !== null) hs(h['cd-mine'], 'width', (w.mine * 100).toFixed(0) + '%');
     if (t.dive) { t.dive.classList.toggle('hidden', !p.isSub); hs(t.dive.firstChild, 'text', p.diveCmd ? '⬆' : '⬇'); }
@@ -3429,6 +3613,7 @@ const Battle = {
         c.beginPath(); c.arc((zn.x + HALF) * k, (zn.y + HALF) * k, zn.r * k, 0, TAU); c.stroke();
       });
     }
+    for (const z of this.rad) { c.fillStyle = 'rgba(160,230,60,.22)'; c.strokeStyle = 'rgba(190,240,70,.75)'; c.lineWidth = 1; c.beginPath(); c.arc((z.x + HALF) * k, (z.y + HALF) * k, z.r * k, 0, TAU); c.fill(); c.stroke(); }    // radiação
     for (const p of this.ports) {                                      // portos
       const x = (p.x + HALF) * k, y = (p.y + HALF) * k, own = p.team === this.player.team;
       c.fillStyle = p.dead ? '#555' : own ? '#5fe08a' : '#ff5d5d'; c.fillRect(x - 5, y - 5, 10, 10); c.strokeStyle = '#fff'; c.lineWidth = 1; c.strokeRect(x - 5, y - 5, 10, 10);

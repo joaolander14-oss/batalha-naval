@@ -1,5 +1,18 @@
 # Changelog
 
+## v2.2.0 — modos novos online, bomba de hidrogênio e radiação
+**Modos novos agora no ONLINE** (Jogar online → Criar sala / lobby → Modo)
+- **⚓ Ataque ao Porto**, **🚩 Capturar a Bandeira**, **🛡 Defesa do Porto** (equipe A defende, B ataca; vence A se o tempo acabar) e **📦 Corrida de Suprimentos**, todos em equipes A × B e com bots do anfitrião (que também atacam o porto, caçam a bandeira e pegam caixas).
+- O anfitrião (o servidor roda no navegador dele) controla portos, torres, bandeiras e caixas; quem atira informa o dano nos portos. O lobby ganhou as opções de cada modo: vida dos portos, torres por porto, capturas para vencer, pontos e caixas de suprimentos e **número de zonas (1 a 5)** no Controle de Zona. O botão do estaleiro agora se chama **🤖 Bots e modos**: é onde ficam os mesmos modos contra bots (offline).
+**☢ Míssil de Hidrogênio** (peça nova em Mísseis balísticos, 900 🪙)
+- Só pode ser usado depois de uma quantidade de **abates escolhida pelo anfitrião** (3 a 30, ou desligada; também no painel do anfitrião durante a partida e em Bots e modos no offline). Tecla **H** (ou o botão ☢ no celular). A linha ☢ do HUD mostra o progresso.
+- Em 9 s uma onda de choque varre o mapa inteiro: **afunda todos os navios, vaporiza todas as ilhas e derruba drones e tiros**, com um cogumelo gigante. **A partida acaba com vitória de quem lançou o míssil** (o servidor encerra no online). Todos recebem o alerta. Um disparo só; sem pontos de abate depois da detonação. A regra "Permitir armas nucleares" também proíbe o hidrogênio.
+**☢ Radiação**
+- Todo míssil nuclear (e o MIRV não) deixa uma **zona de radiação no chão** por 60 s (a intensidade cai com o tempo): as **peças da BORDA dos navios** dentro dela pegam fogo. Aparece no mapa e no minimapa com alerta na tela.
+- **Defesa contra radiação:** **Casco Anti-Radiação** (casco de chumbo), **Placa Anti-Radiação** (blindagem de convés) — peças imunes ao fogo da radiação e com bastante blindagem — e o **Sistema de Descontaminação** (−65% de chance de pegar fogo e apaga o fogo dentro da zona; 2 sistemas: −88%).
+**Outros**
+- O servidor aceita o hidrogênio e o raio maior do nuclear; modos e opções novos entram na lista de salas.
+
 ## v2.1.0 — Campo de testes, nuclear com cogumelo, ilhas destrutíveis e novos modos
 **Míssil balístico nuclear (buff)**
 - Raio **260 → 380**, dano **40 → 60**, recarga **90 s → 70 s**, atordoamento **8 → 12 s**. Agora também **arremessa os navios** para longe, incendeia 75% das peças atingidas e derruba drones no raio.

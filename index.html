@@ -23,7 +23,7 @@
     <div class="meta">
       <span title="Moedas ganhas em batalha aumentam seu orçamento">🪙 <b id="coins">0</b> moedas</span>
       <span title="Maior onda concluída">🏆 Melhor onda: <b id="best">0</b></span>
-      <button class="btn small" id="btn-bots" title="Dificuldade e modelos dos bots, escaramuça">🤖 Bots</button>
+      <button class="btn small" id="btn-bots" title="Dificuldade e modelos dos bots, modos de partida (porto, bandeira, suprimentos…) e escaramuça">🤖 Bots e modos</button>
       <button class="btn small" id="btn-opts" title="Zoom da batalha">⚙ Opções</button>
       <button class="btn small online" id="btn-online" title="Jogar contra outros jogadores">🌐 Jogar online</button>
       <button class="btn small danger" id="btn-reset" title="Apaga moedas, recorde e navio salvo">↺ Resetar jogo</button>
@@ -95,7 +95,7 @@
         <div>
           <h3 class="sub">Criar sala <small>(você é o anfitrião)</small></h3>
           <label class="field">Modo
-            <select id="cr-mode"><option value="ffa">Todos contra todos</option><option value="teams">Equipes (A × B)</option><option value="zone">Controle de Zona (equipes)</option><option value="convoy">Comboio (equipes)</option></select></label>
+            <select id="cr-mode"><option value="ffa">Todos contra todos</option><option value="teams">Equipes (A × B)</option><option value="zone">Controle de Zona (equipes)</option><option value="convoy">Comboio (equipes)</option><option value="port">⚓ Ataque ao Porto (equipes)</option><option value="flag">🚩 Capturar a Bandeira (equipes)</option><option value="defend">🛡 Defesa do Porto (A defende, B ataca)</option><option value="loot">📦 Corrida de Suprimentos (equipes)</option></select></label>
           <label class="field">Ambiente do mapa <select id="cr-env"></select></label>
           <label class="field">Ilhas <select id="cr-isl"><option value="0">Nenhuma</option><option value="1">Poucas</option><option value="2" selected>Normais</option><option value="3">Muitas</option></select></label>
           <label class="field">Orçamento por navio
@@ -151,10 +151,16 @@
           </div>
         </div>
         <div>
-          <label class="field">Modo <select id="lb-mode"><option value="ffa">Todos contra todos</option><option value="teams">Equipes (A × B)</option><option value="zone">Controle de Zona (equipes)</option><option value="convoy">Comboio (equipes)</option></select></label>
+          <label class="field">Modo <select id="lb-mode"><option value="ffa">Todos contra todos</option><option value="teams">Equipes (A × B)</option><option value="zone">Controle de Zona (equipes)</option><option value="convoy">Comboio (equipes)</option><option value="port">⚓ Ataque ao Porto (equipes)</option><option value="flag">🚩 Capturar a Bandeira (equipes)</option><option value="defend">🛡 Defesa do Porto (A defende, B ataca)</option><option value="loot">📦 Corrida de Suprimentos (equipes)</option></select></label>
           <label class="field">Orçamento <select id="lb-budget"><option value="200">🪙 200</option><option value="300">🪙 300</option><option value="450">🪙 450</option><option value="700">🪙 700</option><option value="1000">🪙 1000</option><option value="1500">🪙 1500</option><option value="0">Sem limite</option></select></label>
           <label class="field" id="lb-score-wrap">Pontos p/ vencer (zona) <select id="lb-score"><option>100</option><option>200</option><option>300</option><option>500</option></select></label>
           <label class="field" id="lb-lives-wrap">Vidas do cargueiro <select id="lb-lives"><option>2</option><option>3</option><option>5</option><option>8</option></select></label>
+          <label class="field" id="lb-zones-wrap">Número de zonas <select id="lb-zones"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label>
+          <label class="field" id="lb-portHp-wrap">Vida dos portos <select id="lb-portHp"><option value="0.5">0,5×</option><option value="1">1× (1500)</option><option value="2">2×</option><option value="3">3×</option><option value="5">5×</option></select></label>
+          <label class="field" id="lb-turrets-wrap">Torres de cada porto <select id="lb-turrets"><option value="0">Nenhuma</option><option>1</option><option>2</option><option>3</option><option>4</option><option>6</option></select></label>
+          <label class="field" id="lb-flags-wrap">Capturas p/ vencer <select id="lb-flags"><option>1</option><option>2</option><option>3</option><option>5</option><option>10</option></select></label>
+          <label class="field" id="lb-loot-wrap">Pontos p/ vencer (suprimentos) <select id="lb-loot"><option>10</option><option>25</option><option>40</option><option>60</option></select></label>
+          <label class="field" id="lb-crates-wrap">Caixas ao mesmo tempo <select id="lb-crates"><option>6</option><option>10</option><option>16</option><option>24</option></select></label>
           <label class="field" id="lb-kills-wrap">Abates <select id="lb-kills"><option>5</option><option>10</option><option>15</option><option>20</option><option>30</option><option>50</option></select></label>
           <label class="field">Tempo <select id="lb-min"><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option><option value="0">Sem limite</option></select></label>
           <h3 class="sub">Regras da sala</h3>
@@ -168,7 +174,8 @@
           <label class="check"><input type="checkbox" id="lb-sub"> Permitir submarinos</label>
           <label class="check"><input type="checkbox" id="lb-stealth"> Permitir peças furtivas</label>
           <label class="check"><input type="checkbox" id="lb-guided"> Permitir armas guiadas</label>
-          <label class="check"><input type="checkbox" id="lb-nuke"> Permitir armas nucleares</label>
+          <label class="check"><input type="checkbox" id="lb-nuke"> Permitir armas nucleares e de hidrogênio</label>
+          <label class="field" id="lb-hkills-wrap">☢ Abates p/ liberar a bomba de hidrogênio <select id="lb-hkills"><option value="0">Desligada</option><option>3</option><option>5</option><option>8</option><option>10</option><option>15</option><option>20</option><option>30</option></select></label>
           <label class="check"><input type="checkbox" id="lb-lock"> Trancar a sala (ninguém novo entra)</label>
           <label class="field">Senha <input id="lb-pass" maxlength="8" autocomplete="off" placeholder="sem senha"></label>
         </div>
@@ -217,6 +224,7 @@
       <div class="bar"><div id="hud-batt-fill" class="green"></div></div></div>
     <div class="bar-row" id="hud-row-flood" style="display:none"><label>Alagam.</label>
       <div class="bar"><div id="hud-flood-fill" class="blue"></div></div></div>
+    <div class="hydro-line" id="hud-hydro" style="display:none"></div>
     <div class="fire-line" id="hud-row-fire" style="display:none"><span id="hud-fire-text"></span></div>
     <div class="crew-line" id="hud-crew"></div>
     <div class="bar-row" id="hud-row-torp"><label>Torp./míssil</label>
@@ -244,6 +252,7 @@
     <button class="tbtn dive hidden" id="tbtn-dive">⬇<small>mergulhar</small></button>
     <button class="tbtn aux hidden" id="tbtn-aux">💣<small>minas</small></button>
     <button class="tbtn ball hidden" id="tbtn-ball">🎯<small>balístico</small></button>
+    <button class="tbtn hydro hidden" id="tbtn-hydro">☢<small>hidrogênio</small></button>
     <button class="tbtn pause" id="tbtn-pause">❚❚</button>
   </div>
   <div id="rotate-hint" class="rotate-hint">↻ Gire o celular para o modo paisagem</div>

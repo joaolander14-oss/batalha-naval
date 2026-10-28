@@ -108,6 +108,7 @@ const MODE_FIELDS = [
   { k: 'waves', label: 'Número de ondas', modes: ['defend'], opts: [[3, '3'], [5, '5'], [6, '6'], [8, '8'], [12, '12'], [20, '20']] },
   { k: 'crates', label: 'Caixas ao mesmo tempo', modes: ['loot'], opts: [[6, '6'], [10, '10'], [16, '16'], [24, '24']] },
   { k: 'lootScore', label: 'Pontos para vencer', modes: ['loot'], opts: [[10, '10'], [25, '25'], [40, '40'], [60, '60']] },
+  { k: 'hKills', label: '☢ Abates para liberar a bomba de hidrogênio', modes: ['', ...ALL_OBJ], opts: [[0, 'Desligada'], [3, '3'], [5, '5'], [8, '8'], [10, '10'], [15, '15'], [20, '20'], [30, '30']] },
   { k: 'respawn', label: 'Reaparecer após afundar', modes: ALL_OBJ, opts: [[3, '3 s'], [5, '5 s'], [8, '8 s'], [12, '12 s'], [20, '20 s']] },
   { k: 'arena', label: 'Tamanho do mapa', modes: ALL_OBJ, opts: [[2400, 'Pequeno'], [3600, 'Médio'], [5000, 'Grande']] },
   { k: 'fog', label: 'Névoa de guerra', modes: ALL_OBJ, opts: [[true, 'Ligada'], [false, 'Desligada']] },

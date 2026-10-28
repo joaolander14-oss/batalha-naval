@@ -9,7 +9,7 @@
    A proa (frente) do navio aponta para CIMA da grade.
    ===================================================================== */
 
-const VERSION = '2.1.0';
+const VERSION = '2.2.0';
 const GRID_W = 13;
 const GRID_H = 17;
 const BASE_BUDGET = 220;
@@ -29,7 +29,7 @@ const VISION_BASE = 650;
 const STEALTH_FULL = 0.6;
 const REVEAL_NEAR = 170;
 
-const HULL_CODES = new Set(['#', '=', 'o', '@', '%', 's', '1', '2', '3', '4', '5', 'B', 'b', 'U']);
+const HULL_CODES = new Set(['#', '=', 'o', '@', '%', 's', '1', '2', '3', '4', '5', '6', 'B', 'b', 'U']);
 const isHull = c => HULL_CODES.has(c);
 const isBridge = c => c === 'B' || c === 'b' || c === 'U';
 const DEEP = 0.6;                                   // profundidade (0..1) a partir da qual o submarino está submerso
@@ -76,6 +76,8 @@ const PARTS = {
     desc: 'Núcleo de espuma: levíssimo e aumenta a flutuação, então o navio aguenta mais água antes de afundar.' },
   '5': { layer: 'hull', name: 'Casco Corta-fogo', cost: 7, hp: 8, mass: 1.6, soak: 0.2, fireproof: true,
     desc: 'Revestimento retardante: nunca pega fogo e impede que o fogo passe por ele.' },
+  '6': { layer: 'hull', name: 'Casco Anti-Radiação', cost: 10, hp: 14, mass: 3.5, soak: 0.4, radProof: true,
+    desc: 'Casco forrado de chumbo: a radiação dos mísseis nucleares NÃO incendeia esta peça (e ela ainda segura um pouco os tiros). Pesado. Use na borda do navio, que é onde a radiação pega fogo.' },
   'U': { layer: 'hull', name: 'Torre Submarina', cost: 32, hp: 22, mass: 2.2, soak: 0.3, sub: true,
     desc: 'Troque a ponte por esta torre e o navio vira SUBMARINO: tecla V (ou botão ⬇) mergulha. Submerso ele some da vista, só leva torpedos/minas/cargas e só atira torpedos e minas. Gasta bateria (recarrega na superfície).' },
   'b': { layer: 'hull', name: 'Ponte Blindada', cost: 22, hp: 34, mass: 3, soak: 0.4,
@@ -299,6 +301,8 @@ const SPECIAL_BALLISTICS = {
     desc: 'Pulso eletromagnético gigante (170 de raio): zera escudos e atordoa a tripulação inimiga por 7 s. Quase não fere.' },
   'Ψ': { name: 'Míssil Balístico Hipersônico', size: 'S', wh: 'hyper', cost: 120, hp: 3, mass: 3.5, dmg: 9, splash: 55, reload: 20, speed: 1100, minT: 1.1, scatter: 22,
     desc: 'Chega em pouco mais de 1 s e é bem preciso: quase não dá tempo de fugir do alerta.' },
+  'Ω': { name: 'Míssil de Hidrogênio', size: 'G', wh: 'hydro', hydro: true, nuke: true, cost: 900, hp: 6, mass: 12, dmg: 200, splash: 1500, reload: 99999, minRange: 0, minT: 9,
+    desc: 'A BOMBA DE HIDROGÊNIO: só pode ser usada depois de uma quantidade de abates escolhida pelo anfitrião (tecla H ou botão ☢). Em 9 s uma onda de destruição varre o mapa inteiro, afunda TODOS os navios e vaporiza todas as ilhas. Quem lançou vence a partida. Um só disparo. O anfitrião pode proibir.' },
   'Λ': { name: 'Míssil Balístico Perfurante', size: 'S', wh: 'ap', cost: 110, hp: 3, mass: 3.5, dmg: 30, splash: 38, reload: 26, scatter: 20,
     desc: 'Penetrador: explosão pequena e dano enorme no ponto de impacto. Para acabar com um navio parado.' },
 };
@@ -478,6 +482,12 @@ def20('ю', { kind: 'degauss', name: 'Cinto Desmagnetizador', cost: 30, hp: 2, m
 def20('я', { kind: 'djammer', name: 'Interferidor de Drones', cost: 36, hp: 2, mass: 1.2, range: 300, art: { g: 'djam', col: '#ffb347' },
   desc: 'Corta o link de rádio: drones inimigos a até 300 caem rapidamente (cerca de 1 por segundo).' });
 
+/* ---- v2.2: defesa contra radiação ---- */
+def20('Ʃ', { kind: 'plate', name: 'Placa Anti-Radiação', cost: 14, hp: 16, mass: 3.6, soak: 0.5, radProof: true, art: { g: 'radp', col: '#b6e34a' },
+  desc: 'Blindagem de convés forrada de chumbo: a célula que a carrega NÃO pega fogo com a radiação dos mísseis nucleares e absorve 0,5 de cada tiro. Ocupa o lugar de uma arma, então coloque nas células da borda.' });
+def20('Ʒ', { kind: 'decon', name: 'Sistema de Descontaminação', cost: 26, hp: 3, mass: 1.6, art: { g: 'decon', col: '#7fe3c8' },
+  desc: 'Jatos de lavagem: dentro de uma zona de radiação a chance das peças da borda pegarem fogo cai 65% (2 sistemas: 88%). Combina com cascos e placas anti-radiação.' });
+
 /** grupos da paleta, na ordem em que aparecem */
 const GROUP_ORDER = ['Casco', 'Blindagem de convés', 'Ponte', 'Aletas', 'Canhões', 'Morteiros', 'Metralhadoras', 'Corpo a corpo', 'Torpedos',
   'Mísseis de cruzeiro', 'Mísseis balísticos', 'Drones', 'Propulsão', 'Submarino', 'Controle de avarias', 'Sensores e furtividade', 'Apoio', 'Contramedidas',
@@ -578,6 +588,7 @@ const TOOLS = [
   for (const c of ['б', 'в', 'г', 'д', 'ж', 'з', 'и', 'й', 'к', 'л', 'м']) add(c, 'Controle de avarias');
   for (const c of ['Ē', 'Ė', 'Ę', 'Ě', 'Ĝ', 'Ģ', 'Ĥ', 'Ħ', 'Ĩ']) add(c, 'Apoio');
   for (const c of ['н', 'п', 'т', 'ф', 'ц', 'ч', 'ш', 'щ', 'ы', 'э', 'ю', 'я']) add(c, 'Contramedidas');
+  add('6', 'Casco'); add('Ʃ', 'Blindagem de convés'); add('Ʒ', 'Controle de avarias');                    // v2.2: anti-radiação
   const ord = TOOLS.map((t, i) => [t, i]);
   ord.sort((a, b) => (GROUP_ORDER.indexOf(a[0].group) - GROUP_ORDER.indexOf(b[0].group)) || (a[1] - b[1]));
   TOOLS.length = 0; for (const [t] of ord) TOOLS.push(t);
@@ -600,7 +611,8 @@ function shipStats(cells) {
     // v2.0
     lookouts: 0, irstR: 0, aesa: 0, threatR: 0, mineDetR: 0, rangeFinders: 0, sealants: 0, buoys: 0, suppress: 0, cutters: 0, insul: 0, dampers: 0,
     boosters: 0, cic: 0, dronebays: 0, ballcomps: 0, gyros: 0, silencers: 0, irsupp: 0, degauss: 0, djam: 0, smokers: 0, tjam: 0, chaffs: 0, decoys: 0,
-    finSpeed: 0, finGrip: 0, finTurn: 0, finDive: 0, diveFins: 0, bowSonar: 0, radarB: [], pumpR: [], loadF: [], fcsT: [], fcsS: [] };
+    finSpeed: 0, finGrip: 0, finTurn: 0, finDive: 0, diveFins: 0, bowSonar: 0, radarB: [], pumpR: [], loadF: [], fcsT: [], fcsS: [],
+    decons: 0, hydros: 0, radHull: 0 };
   for (const c of cells) {
     const b = PARTS[c.base];
     s.mass += b.mass; s.hp += b.hp; s.cost += b.cost; s.count++;
@@ -610,7 +622,7 @@ function shipStats(cells) {
       if (b.diveB && ++s.diveFins <= 2) s.finDive += b.diveB;
       if (b.bowSonar) s.bowSonar = Math.max(s.bowSonar, b.bowSonar);
     }
-    if (isHull(c.base)) { s.hullCount++; s.stealthW += b.stealth || 0; }
+    if (isHull(c.base)) { s.hullCount++; s.stealthW += b.stealth || 0; if (b.radProof) s.radHull++; }
     if (b.sub) s.sub = true;
     if (b.float) s.floats++;
     if (b.bulkhead) s.bulkheads++;
@@ -619,6 +631,7 @@ function shipStats(cells) {
     const t = PARTS[c.top];
     s.mass += t.mass; s.hp += t.hp; s.cost += t.cost;
     if (t.nuke) s.nukes++;
+    if (t.hydro) s.hydros++;
     switch (t.kind) {
       case 'cannon': s.cannons++; s.dps += t.dmg * t.shots / t.reload; break;
       case 'mortar': s.mortars++; s.dps += t.dmg * (t.shots || 1) / t.reload * 0.6; break;
@@ -633,6 +646,7 @@ function shipStats(cells) {
       case 'thruster': s.thrusters++; break;
       case 'radar': s.radars++; s.radarB.push(t.bonus); break;
       case 'lookout': s.lookouts++; break;
+      case 'decon': s.decons++; break;
       case 'irst': s.irstR = Math.max(s.irstR, t.range); break;
       case 'aesa': s.aesa = Math.max(s.aesa, t.floor); break;
       case 'threat': s.threatR = Math.max(s.threatR, t.range); break;
@@ -1604,9 +1618,9 @@ const MODE_INFO = {
   defend: { name: 'Defesa do Porto (ondas)', desc: 'Defesa do Porto: ondas de bots inimigos atacam o seu porto. Aguente todas as ondas! Os inimigos da lista não são usados: as ondas se escalam sozinhas.' },
   loot:   { name: 'Corrida de Suprimentos', desc: 'Corrida de Suprimentos: caixas aparecem pelo mar. Encoste nelas para pontuar (dourada = 3 pontos, verde = repara o navio). O primeiro time à meta vence.' },
 };
-const MODE_OPTS_DEFAULT = { minutes: 8, respawn: 8, fog: true, ff: false, arena: 3600, score: 200, zones: 3, lives: 3, portHp: 1, turrets: 2, flags: 3, waves: 6, crates: 10, lootScore: 25 };
+const MODE_OPTS_DEFAULT = { minutes: 8, respawn: 8, fog: true, ff: false, arena: 3600, score: 200, zones: 3, lives: 3, portHp: 1, turrets: 2, flags: 3, waves: 6, crates: 10, lootScore: 25, hKills: 10 };
 /** [mín, máx] de cada opção numérica (validação ao carregar do armazenamento) */
-const MODE_OPTS_RANGE = { minutes: [0, 60], respawn: [2, 30], arena: [2400, 5000], score: [50, 1000], zones: [1, 5], lives: [1, 10], portHp: [0.25, 5], turrets: [0, 6], flags: [1, 10], waves: [1, 20], crates: [3, 30], lootScore: [5, 100] };
+const MODE_OPTS_RANGE = { minutes: [0, 60], respawn: [2, 30], arena: [2400, 5000], score: [50, 1000], zones: [1, 5], lives: [1, 10], portHp: [0.25, 5], turrets: [0, 6], flags: [1, 10], waves: [1, 20], crates: [3, 30], lootScore: [5, 100], hKills: [0, 50] };
 
 /** ponto de nascimento livre de ilhas. side: 'A' (esquerda), 'B' (direita) ou '' (anel). rnd: () => [0,1) */
 function pickSpawn(map, side, rnd, avoid) {
@@ -1872,6 +1886,16 @@ function drawBase(ctx, code, cs, o = {}) {
       ctx.fillStyle = '#c08a55';
       for (const sx of [-h + 2.5, 1]) for (const sy of [-h + 2.5, 1]) ctx.fillRect(sx, sy, h - 3.5, h - 3.5);
       break;
+    case '6': {                                                                   // casco anti-radiação: chumbo cinza-escuro com trevo amarelo-esverdeado
+      ctx.fillStyle = '#1a1d1a'; ctx.fillRect(-h, -h, cs, cs);
+      ctx.fillStyle = '#4a514a'; ctx.fillRect(-h + 1.5, -h + 1.5, cs - 3, cs - 3);
+      ctx.fillStyle = '#5f685f'; ctx.fillRect(-h + 4, -h + 4, cs - 8, cs - 8);
+      ctx.fillStyle = '#b6e34a'; ctx.strokeStyle = '#1a1d1a'; ctx.lineWidth = 1;
+      for (let i = 0; i < 3; i++) { const a = i * TAU / 3 - Math.PI / 2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, cs * 0.28, a - 0.5, a + 0.5); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+      ctx.fillStyle = '#2a2f2a'; ctx.beginPath(); ctx.arc(0, 0, cs * 0.07, 0, TAU); ctx.fill();
+      rivets(ctx, h - 3.5, Math.max(1.2, cs * 0.05), '#232823');
+      break;
+    }
     case 'U': {
       ctx.fillStyle = '#0b1b26'; ctx.fillRect(-h, -h, cs, cs);
       ctx.fillStyle = '#31505f'; ctx.fillRect(-h + 1.5, -h + 1.5, cs - 3, cs - 3);
@@ -2407,9 +2431,10 @@ function drawV191(ctx, code, cs, o) {
   const t = (o && o.time) || 0;
   if (P.kind === 'ballistic' && P.wh) {
     drawV19(ctx, code, cs, o);                                        // silo base
-    const tip = { nuke: '#f5c518', cluster: '#9aa4ae', ap: '#5b6670', inc: '#ff7a1f', emp: '#4cc9ff', hyper: '#e8503a' }[P.wh] || '#fff';
+    const tip = { nuke: '#f5c518', cluster: '#9aa4ae', ap: '#5b6670', inc: '#ff7a1f', emp: '#4cc9ff', hyper: '#e8503a', hydro: '#d36bff' }[P.wh] || '#fff';
     const cx = cs * 0.26, cy = -cs * 0.26; ctx.lineWidth = 1.6; ctx.strokeStyle = tip; ctx.fillStyle = tip;
     switch (P.wh) {
+      case 'hydro': ctx.beginPath(); ctx.arc(cx, cy, cs * 0.05, 0, TAU); ctx.fill(); for (let i = 0; i < 3; i++) { ctx.save(); ctx.translate(cx, cy); ctx.rotate(i * Math.PI / 3 + t * 0.9); ctx.beginPath(); ctx.ellipse(0, 0, cs * 0.15, cs * 0.055, 0, 0, TAU); ctx.stroke(); ctx.restore(); } break;
       case 'nuke': for (let i = 0; i < 3; i++) { const a = i * TAU / 3 + t * 0.8; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, cs * 0.14, a, a + 0.9); ctx.closePath(); ctx.fill(); } break;
       case 'cluster': for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.arc(cx + (i % 3 - 1) * cs * 0.07, cy + (i < 3 ? -0.04 : 0.05) * cs, cs * 0.03, 0, TAU); ctx.fill(); } break;
       case 'ap': poly(ctx, [[cx - cs * 0.1, cy + cs * 0.08], [cx + cs * 0.1, cy], [cx - cs * 0.1, cy - cs * 0.08]]); ctx.fill(); break;
@@ -2731,6 +2756,16 @@ const GLYPH20 = {
   degauss(c, u) {
     c.lineWidth = u * 0.13; c.beginPath(); c.arc(0, -u * 0.02, u * 0.2, Math.PI, 0); c.lineTo(u * 0.2, u * 0.2); c.moveTo(-u * 0.2, -u * 0.02); c.lineTo(-u * 0.2, u * 0.2); c.stroke();
     c.fillStyle = '#e9eef3'; c.fillRect(-u * 0.265, u * 0.14, u * 0.13, u * 0.12); c.fillRect(u * 0.135, u * 0.14, u * 0.13, u * 0.12);
+  },
+  radp(c, u) {                                                                 // placa anti-radiação: trevo sobre chapa
+    c.strokeRect(-u * 0.28, -u * 0.28, u * 0.56, u * 0.56);
+    for (let i = 0; i < 3; i++) { const a = i * TAU / 3 - Math.PI / 2; c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, u * 0.24, a - 0.5, a + 0.5); c.closePath(); c.fill(); }
+    c.fillStyle = '#1d252d'; c.beginPath(); c.arc(0, 0, u * 0.06, 0, TAU); c.fill();
+  },
+  decon(c, u, t) {                                                             // descontaminação: chuveiro com gotas
+    c.beginPath(); c.arc(0, -u * 0.12, u * 0.2, Math.PI, 0); c.stroke();
+    c.beginPath(); c.moveTo(0, -u * 0.32); c.lineTo(0, -u * 0.12); c.stroke();
+    for (let i = -2; i <= 2; i++) { const o = (t * 1.8 + i * 0.37) % 1; c.beginPath(); c.arc(i * u * 0.09, -u * 0.02 + o * u * 0.34, u * 0.025, 0, TAU); c.fill(); }
   },
   djam(c, u) {
     c.beginPath(); c.moveTo(-u * 0.14, -u * 0.14); c.lineTo(u * 0.14, u * 0.14); c.moveTo(u * 0.14, -u * 0.14); c.lineTo(-u * 0.14, u * 0.14); c.stroke();

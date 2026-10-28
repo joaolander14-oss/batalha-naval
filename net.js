@@ -62,7 +62,7 @@ const Online = {
       if (sel.value === 'meu') m.design = Builder.getDesign();
       this.send(m);
     };
-    for (const id of ['lb-mode', 'lb-budget', 'lb-kills', 'lb-min', 'lb-max', 'lb-resp', 'lb-arena', 'lb-fog', 'lb-ff', 'lb-sub', 'lb-stealth', 'lb-guided', 'lb-nuke', 'lb-lock', 'lb-env', 'lb-isl', 'lb-score', 'lb-lives'])
+    for (const id of ['lb-mode', 'lb-budget', 'lb-kills', 'lb-min', 'lb-max', 'lb-resp', 'lb-arena', 'lb-fog', 'lb-ff', 'lb-sub', 'lb-stealth', 'lb-guided', 'lb-nuke', 'lb-lock', 'lb-env', 'lb-isl', 'lb-score', 'lb-lives', 'lb-zones', 'lb-portHp', 'lb-turrets', 'lb-flags', 'lb-loot', 'lb-crates', 'lb-hkills'])
       $(id).onchange = () => this.send({ t: 'settings', settings: this.formSettings('lb') });
     $('lb-pass').onchange = () => this.send({ t: 'settings', settings: Object.assign(this.formSettings('lb'), { pass: $('lb-pass').value.trim(), setPass: true }) });
     $('ht-fill').onclick = () => this.send({ t: 'fillBots', n: 8, diff: $('ba-diff').value });
@@ -81,6 +81,7 @@ const Online = {
     const chk = (id, key) => { const e = $(id); if (e) o[key] = e.checked; };
     chk('nuke', 'allowNuke');
     num('max', 'maxPlayers'); num('resp', 'respawn'); num('arena', 'arena'); num('isl', 'islands'); num('score', 'scoreLimit'); num('lives', 'cargoLives');
+    num('zones', 'zones'); num('portHp', 'portHp'); num('turrets', 'turrets'); num('flags', 'flagLimit'); num('loot', 'lootLimit'); num('crates', 'crates'); num('hkills', 'hKills');
     { const e = $('env'); if (e) o.env = e.value; }
     chk('fog', 'fog'); chk('ff', 'ff'); chk('sub', 'allowSub'); chk('stealth', 'allowStealth'); chk('guided', 'allowGuided'); chk('lock', 'locked');
     const pw = $('pass'); if (pw && p === 'cr') o.pass = pw.value.trim();             // no lobby a senha tem campo/evento próprio
@@ -118,18 +119,24 @@ const Online = {
   renderLobby() {
     const $ = id => document.getElementById(id), r = this.room, host = this.isHost(), me = this.me();
     $('lobby-code').textContent = r.code;
-    const S = r.settings, teams = S.mode !== 'ffa', om = S.mode === 'zone' || S.mode === 'convoy';
+    const S = r.settings, teams = S.mode !== 'ffa', om = ['zone', 'convoy', 'port', 'flag', 'defend', 'loot'].includes(S.mode);
     $('lb-mode').value = S.mode; $('lb-budget').value = S.budget; $('lb-kills').value = S.killLimit; $('lb-min').value = S.minutes;
     $('lb-max').value = S.maxPlayers; $('lb-resp').value = S.respawn; $('lb-arena').value = S.arena;
     $('lb-env').value = S.env || 'rand'; $('lb-isl').value = String(S.islands == null ? 2 : S.islands); $('lb-score').value = String(S.scoreLimit || 300); $('lb-lives').value = String(S.cargoLives || 3);
     $('lb-score-wrap').style.display = S.mode === 'zone' ? '' : 'none'; $('lb-lives-wrap').style.display = S.mode === 'convoy' ? '' : 'none'; $('lb-kills-wrap').style.display = om ? 'none' : '';
+    $('lb-zones').value = String(S.zones || 3); $('lb-portHp').value = String(S.portHp || 1); $('lb-turrets').value = String(S.turrets === undefined ? 2 : S.turrets);
+    $('lb-flags').value = String(S.flagLimit || 3); $('lb-loot').value = String(S.lootLimit || 25); $('lb-crates').value = String(S.crates || 10); $('lb-hkills').value = String(S.hKills === undefined ? 10 : S.hKills);
+    const show = (id, on) => { $('lb-' + id + '-wrap').style.display = on ? '' : 'none'; };
+    show('zones', S.mode === 'zone'); show('portHp', S.mode === 'port' || S.mode === 'defend'); show('turrets', S.mode === 'port' || S.mode === 'flag' || S.mode === 'defend');
+    show('flags', S.mode === 'flag'); show('loot', S.mode === 'loot'); show('crates', S.mode === 'loot');
     $('lb-fog').checked = S.fog !== false; $('lb-ff').checked = !!S.ff; $('lb-sub').checked = S.allowSub !== false;
     $('lb-nuke').checked = S.allowNuke !== false; $('lb-stealth').checked = S.allowStealth !== false; $('lb-guided').checked = S.allowGuided !== false; $('lb-lock').checked = !!S.locked;
     if (document.activeElement !== $('lb-pass')) $('lb-pass').value = '';
     $('lb-pass').placeholder = S.hasPass ? '(senha definida — digite para trocar)' : 'sem senha';
-    for (const id of ['lb-mode', 'lb-budget', 'lb-kills', 'lb-min', 'lb-max', 'lb-resp', 'lb-arena', 'lb-fog', 'lb-ff', 'lb-sub', 'lb-stealth', 'lb-guided', 'lb-nuke', 'lb-lock', 'lb-pass', 'lb-env', 'lb-isl', 'lb-score', 'lb-lives']) $(id).disabled = !host;
+    for (const id of ['lb-mode', 'lb-budget', 'lb-kills', 'lb-min', 'lb-max', 'lb-resp', 'lb-arena', 'lb-fog', 'lb-ff', 'lb-sub', 'lb-stealth', 'lb-guided', 'lb-nuke', 'lb-lock', 'lb-pass', 'lb-env', 'lb-isl', 'lb-score', 'lb-lives', 'lb-zones', 'lb-portHp', 'lb-turrets', 'lb-flags', 'lb-loot', 'lb-crates', 'lb-hkills']) $(id).disabled = !host;
     $('lb-ff').disabled = !host || !teams;
-    $('lobby-flags').textContent = [S.mode === 'zone' ? '🏁 Controle de Zona' : S.mode === 'convoy' ? '🚢 Comboio (A defende, B ataca)' : '', '🗺 ' + (S.env === 'rand' || !BIOMES[S.env] ? 'ambiente aleatório' : BIOMES[S.env].name), S.locked ? '🔒 sala trancada' : '', S.hasPass ? '🔑 com senha' : '', S.fog === false ? '👁 sem névoa' : '', S.ff ? '💥 fogo amigo' : '',
+    const MODE_TXT = { zone: '🏁 Controle de Zona', convoy: '🚢 Comboio (A defende, B ataca)', port: '⚓ Ataque ao Porto', flag: '🚩 Capturar a Bandeira', defend: '🛡 Defesa do Porto (A defende, B ataca)', loot: '📦 Corrida de Suprimentos' };
+    $('lobby-flags').textContent = [MODE_TXT[S.mode] || '', S.hKills > 0 && S.allowNuke !== false ? '☢ hidrogênio com ' + S.hKills + ' abates' : '', '🗺 ' + (S.env === 'rand' || !BIOMES[S.env] ? 'ambiente aleatório' : BIOMES[S.env].name), S.locked ? '🔒 sala trancada' : '', S.hasPass ? '🔑 com senha' : '', S.fog === false ? '👁 sem névoa' : '', S.ff ? '💥 fogo amigo' : '',
       S.allowSub === false ? '🚫 submarinos' : '', S.allowStealth === false ? '🚫 furtivo' : '', S.allowGuided === false ? '🚫 guiadas' : '', S.allowNuke === false ? '🚫 nuclear' : ''].filter(Boolean).join(' · ');
     $('lobby-players').innerHTML = r.players.map(p => {
       const isHostRow = p.id === r.host;
@@ -165,7 +172,7 @@ const Online = {
   renderRooms(list) {
     const el = document.getElementById('on-rooms');
     el.innerHTML = list.length ? list.map(x => `<button class="room-row" data-code="${x.code}">
-        <b>${x.code}</b> <span>${esc(x.host)}</span> <small>${x.n}/8 · ${({ teams: 'equipes', zone: 'controle de zona', convoy: 'comboio' })[x.settings.mode] || 'todos contra todos'} · 🪙${x.settings.budget || '∞'} · ${x.settings.killLimit} abates</small></button>`).join('')
+        <b>${x.code}</b> <span>${esc(x.host)}</span> <small>${x.n}/8 · ${({ teams: 'equipes', zone: 'controle de zona', convoy: 'comboio', port: 'ataque ao porto', flag: 'bandeira', defend: 'defesa do porto', loot: 'suprimentos' })[x.settings.mode] || 'todos contra todos'} · 🪙${x.settings.budget || '∞'} · ${x.settings.killLimit} abates</small></button>`).join('')
       : '<p class="muted">Nenhuma sala aberta. Crie a sua!</p>';
     el.querySelectorAll('.room-row').forEach(b => b.onclick = () => this.send({ t: 'join', code: b.dataset.code }));
   },
@@ -355,11 +362,23 @@ const Online = {
         break;
       case 'score':
         this.scores = m.list; this.teams = m.teams; this.left = m.left;
-        if (m.obj) { this.objState = m.obj.mode === 'zone' ? { mode: 'zone', z: m.obj.z.map(a => ({ cap: a[0], owner: a[1], contested: !!a[2] })), sc: m.obj.sc, lim: m.obj.lim } : m.obj; Battle.objState = this.objState; }
+        if (m.obj) this.setObj(m.obj);
         this.renderScore(); break;
+      case 'obj': if (this.inMatch && m.obj) this.setObj(m.obj); break;                      // evento importante (bandeira, caixa…): atualiza na hora
+      case 'crate': if (this.inMatch) Battle.onCrate(m); break;
       case 'end': this.onEnd(m); break;
     }
   },
+
+  /** resumo do objetivo vindo do anfitrião (zonas, comboio, portos, bandeiras, caixas) */
+  setObj(o) {
+    this.objState = o.mode === 'zone' ? { mode: 'zone', z: o.z.map(a => ({ cap: a[0], owner: a[1], contested: !!a[2] })), sc: o.sc, lim: o.lim } : o;
+    Battle.objState = this.objState;
+    if (o.mode !== 'zone' && o.mode !== 'convoy') Battle.applyObj(o);
+  },
+
+  /** dano em um porto: acumula e envia a cada 0,3 s (quem atirou informa; o servidor soma) */
+  sendPortHit(team, dmg, owner) { this.send({ t: 'phit', team, dmg: Math.min(900, +dmg.toFixed(1)), as: owner && owner !== this.id ? owner : undefined }); },
 
   /* -------------------------------------------------------------------- partida */
   beginMatch(m) {
@@ -375,6 +394,10 @@ const Online = {
     const md = m.settings.mode, tm = m.settings.minutes ? ' · ' + m.settings.minutes + ' min' : '';
     if (md === 'zone') UI.banner('CONTROLE DE ZONA', 'Segure as zonas · primeiro a ' + m.settings.scoreLimit + ' pontos' + tm);
     else if (md === 'convoy') UI.banner('COMBOIO', (me.team === 'A' ? 'Equipe A: escolte o cargueiro até o destino' : 'Equipe B: afunde o cargueiro (ele renasce)') + tm);
+    else if (md === 'port') UI.banner('ATAQUE AO PORTO', 'Destrua o porto da outra equipe e defenda o seu · balísticos arrasam' + tm);
+    else if (md === 'flag') UI.banner('CAPTURAR A BANDEIRA', 'Leve a bandeira inimiga ao seu porto · primeiro a ' + m.settings.flagLimit + tm);
+    else if (md === 'defend') UI.banner('DEFESA DO PORTO', (me.team === 'A' ? 'Equipe A: defenda o porto' : 'Equipe B: destrua o porto da Equipe A') + tm);
+    else if (md === 'loot') UI.banner('CORRIDA DE SUPRIMENTOS', 'Pegue as caixas · primeiro a ' + m.settings.lootLimit + ' pontos' + tm);
     else UI.banner(md === 'teams' ? 'EQUIPES' : 'TODOS CONTRA TODOS', 'Primeiro a ' + m.settings.killLimit + ' abates' + tm + ' · ' + (BIOMES[m.map.env] || BIOMES.oceano).name);
     this.renderScore();
   },
@@ -416,7 +439,12 @@ const Online = {
   objText() {
     const o = this.objState, me = Battle.player ? Battle.player.team : '';
     if (!o) return '';
-    if (o.mode === 'zone') { const mine = o.sc[me] || 0, foe = o.sc[me === 'A' ? 'B' : 'A'] || 0; return '🏁 Zonas · sua equipe ' + mine + ' × ' + foe + ' · meta ' + o.lim; }
+    const foeT = me === 'A' ? 'B' : 'A', pct = T => o.ports && o.ports[T] ? Math.round(100 * o.ports[T][0] / o.ports[T][1]) + '%' : '—';
+    if (o.mode === 'zone') { const mine = o.sc[me] || 0, foe = o.sc[foeT] || 0; return '🏁 Zonas · sua equipe ' + mine + ' × ' + foe + ' · meta ' + o.lim; }
+    if (o.mode === 'port') return '⚓ Portos · seu ' + pct(me) + ' × inimigo ' + pct(foeT);
+    if (o.mode === 'defend') return '🛡 Porto da Equipe A: ' + pct('A') + (me === 'A' ? ' (defenda!)' : ' (destrua!)');
+    if (o.mode === 'flag') return '🚩 Capturas · sua equipe ' + (o.caps[me] || 0) + ' × ' + (o.caps[foeT] || 0) + ' · meta ' + o.lim + (Battle.player && Battle.player.carrying ? ' · CARREGANDO!' : '');
+    if (o.mode === 'loot') return '📦 Suprimentos · sua equipe ' + (o.sc[me] || 0) + ' × ' + (o.sc[foeT] || 0) + ' · meta ' + o.lim;
     return '🚢 Comboio ' + Math.round((o.prog || 0) * 100) + '% · ❤ ' + o.lives + (o.alive ? '' : ' · cargueiro afundado');
   },
 
@@ -461,6 +489,7 @@ const Online = {
         <div class="hp-row">
           <label>Abates p/ vencer <select id="hp-kills">${opts([5, 10, 15, 20, 30, 50], S.killLimit)}</select></label>
           <label>Reaparecer em <select id="hp-resp">${opts([1, 3, 5, 8, 12, 15], S.respawn, v => v + ' s')}</select></label>
+          <label>☢ Hidrogênio com <select id="hp-hk">${opts([0, 3, 5, 8, 10, 15, 20, 30], S.hKills === undefined ? 10 : S.hKills, v => v ? v + ' abates' : 'desligada')}</select></label>
           ${S.mode !== 'ffa' ? `<label class="check"><input type="checkbox" id="hp-ff" ${S.ff ? 'checked' : ''}> Fogo amigo</label>` : ''}</div>
         <h3>Anunciar a todos</h3>
         <div class="hp-row"><input type="text" id="hp-say" maxlength="90" placeholder="mensagem"><button class="btn" id="hp-send">Enviar</button></div>
@@ -475,8 +504,8 @@ const Online = {
     $('hp-pause').onclick = () => { this.send({ t: 'pause', v: !this.paused }); UI.hideOverlay(); };
     $('hp-time').onclick = () => this.send({ t: 'addTime', min: 5 });
     $('hp-end').onclick = () => { if (confirm('Encerrar a partida para todos?')) { UI.hideOverlay(); this.send({ t: 'endNow' }); } };
-    const live = () => this.send({ t: 'live', settings: { killLimit: +$('hp-kills').value, respawn: +$('hp-resp').value, ff: $('hp-ff') ? $('hp-ff').checked : false } });
-    $('hp-kills').onchange = live; $('hp-resp').onchange = live; if ($('hp-ff')) $('hp-ff').onchange = live;
+    const live = () => this.send({ t: 'live', settings: { killLimit: +$('hp-kills').value, respawn: +$('hp-resp').value, hKills: +$('hp-hk').value, ff: $('hp-ff') ? $('hp-ff').checked : false } });
+    $('hp-kills').onchange = live; $('hp-resp').onchange = live; $('hp-hk').onchange = live; if ($('hp-ff')) $('hp-ff').onchange = live;
     $('hp-send').onclick = () => { const t = $('hp-say').value.trim(); if (t) { this.send({ t: 'say', text: t }); $('hp-say').value = ''; } };
     box.querySelectorAll('[data-hp-rm]').forEach(b => b.onclick = () => { this.send({ t: 'removeBot', id: b.dataset.hpRm }); b.parentElement.remove(); });
     box.querySelectorAll('[data-hp-kick]').forEach(b => b.onclick = () => { this.send({ t: 'kick', id: b.dataset.hpKick }); b.parentElement.remove(); });
@@ -489,7 +518,7 @@ const Online = {
     const mm = this.left >= 0 ? `${Math.floor(this.left / 60)}:${String(this.left % 60).padStart(2, '0')}` : '∞';
     const teams = this.cfg.settings.mode !== 'ffa' ? Object.keys(this.teams).sort().map(t => `<span class="team t${t}">${t}: ${this.teams[t]}</span>`).join(' ') : '';
     const list = this.scores.length ? this.scores : this.cfg.players.map(p => ({ id: p.id, name: p.name, team: p.team, kills: 0, deaths: 0 }));
-    el.innerHTML = `<div class="sb-head"><span>⏱ ${mm}</span><span>${this.cfg.settings.mode === 'zone' || this.cfg.settings.mode === 'convoy' ? '' : 'até ' + this.cfg.settings.killLimit}</span>${teams}</div>` +
+    el.innerHTML = `<div class="sb-head"><span>⏱ ${mm}</span><span>${['zone', 'convoy', 'port', 'flag', 'defend', 'loot'].includes(this.cfg.settings.mode) ? '' : 'até ' + this.cfg.settings.killLimit}</span>${teams}</div>` +
       list.map(p => `<div class="sb-row ${p.id === this.id ? 'me' : ''}"><span class="n">${this.cfg.settings.mode !== 'ffa' ? `<i class="dot t${p.team}"></i>` : ''}${esc(p.name)}</span><b>${p.kills}</b><small>/${p.deaths}</small></div>`).join('');
   },
 
